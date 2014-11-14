@@ -94,16 +94,28 @@ public:
 	
 	///This is thread safe if you do not after calling addPolygonsToRaster()
 	template<typename T_SET_TYPE = std::set<uint32_t> >
-	T_SET_TYPE test(const Point & p) const {
-		T_SET_TYPE polys;
-		std::insert_iterator<T_SET_TYPE> inserter(polys, polys.end());
+	inline void test(const Point & p, T_SET_TYPE & dest) const {
+		std::insert_iterator<T_SET_TYPE> inserter(dest, dest.end());
 		m_grt.find(p, inserter);
+	}
+	
+	///This is thread safe if you do not after calling addPolygonsToRaster()
+	template<typename T_SET_TYPE = std::set<uint32_t> >
+	inline void test(double lat, double lon, T_SET_TYPE & dest) const {
+		return test(Point(lat, lon), dest);
+	}
+	
+	///This is thread safe if you do not after calling addPolygonsToRaster()
+	template<typename T_SET_TYPE = std::set<uint32_t> >
+	inline T_SET_TYPE test(const Point & p) const {
+		T_SET_TYPE polys;
+		test(p, polys);
 		return polys;
 	}
 	
 	///This is thread safe if you do not after calling addPolygonsToRaster()
 	template<typename T_SET_TYPE = std::set<uint32_t> >
-	T_SET_TYPE test(double lat, double lon) const {
+	inline T_SET_TYPE test(double lat, double lon) const {
 		return test(Point(lat, lon));
 	}
 };
