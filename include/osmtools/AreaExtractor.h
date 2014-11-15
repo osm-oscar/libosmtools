@@ -113,7 +113,7 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 
 		progress(inFile.dataPosition());
 
-		if (mainFilter->buildIdCache()) {
+		if (!mainFilter->buildIdCache()) {
 			continue;
 		}
 		
