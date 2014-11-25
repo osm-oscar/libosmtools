@@ -69,14 +69,13 @@ public:
 		std::shared_ptr<sserialize::spatial::GeoRegion> * region;
 	};
 	typedef enum { ET_NONE=0, ET_BOUNDARIES=0x1, ET_LANDUSE=0x2, ET_AREA=0x4, ET_BUILDING=0x4|0x8, ET_ALL_BUT_BUILDINGS=ET_BOUNDARIES|ET_LANDUSE|ET_AREA, ET_ALL=ET_ALL_BUT_BUILDINGS|ET_BUILDING} ExtractionTypes;
-private:
-	generics::RCPtr<osmpbf::AbstractTagFilter> setUpMainFilter(ExtractionTypes extractionTypes, bool needsName);
 public:
 	AreaExtractor() {}
 	virtual ~AreaExtractor() {}
 	///@param processor (const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive), MUST be thread-safe
 	template<typename TProcessor>
 	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_BUT_BUILDINGS, bool needsName = true);
+	static generics::RCPtr<osmpbf::AbstractTagFilter> createExtractionFilter(ExtractionTypes extractionTypes, bool needsName);
 };
 
 
@@ -99,7 +98,7 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 	std::unordered_set<int64_t> relevantWays;
 	std::unordered_set<int64_t> relevantRelations;
 
-	generics::RCPtr<osmpbf::AbstractTagFilter> mainFilter(setUpMainFilter(extractionTypes, needsName));
+	generics::RCPtr<osmpbf::AbstractTagFilter> mainFilter(createExtractionFilter(extractionTypes, needsName));
 	
 	mainFilter->assignInputAdaptor(&pbi);
 

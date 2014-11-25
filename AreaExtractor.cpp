@@ -91,7 +91,7 @@ bool MultiPolyResolver::multiPolyFromWays(const std::vector<RawWay> & innerIn, c
 
 }}//end namespace detail::AreaExtractor
 
-generics::RCPtr<osmpbf::AbstractTagFilter> AreaExtractor::setUpMainFilter(ExtractionTypes extractionTypes, bool needsName) {
+generics::RCPtr<osmpbf::AbstractTagFilter> AreaExtractor::createExtractionFilter(ExtractionTypes extractionTypes, bool needsName) {
 	generics::RCPtr<osmpbf::AbstractTagFilter> mainFilter;
 	generics::RCPtr<osmpbf::OrTagFilter> areaFilter(new osmpbf::OrTagFilter());
 
