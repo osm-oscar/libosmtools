@@ -7,10 +7,14 @@
 #include <sserialize/spatial/GeoRegionStore.h>
 #include <osmpbf/osmfile.h>
 #include <osmpbf/primitiveblockinputadaptor.h>
-#include <osmpbf/filter.h>
 #include <osmpbf/irelation.h>
 #include <osmpbf/iway.h>
 #include <osmpbf/inode.h>
+#include <osmtools/AreaExtractorFilters.h>
+
+/** This is a simple class to extract areas from OpenStreetMap pbf-files
+  * It needs the osmpbf and sserialize libraries in global include paths
+  */
 
 namespace osmtools {
 namespace detail {
@@ -62,20 +66,18 @@ struct MultiPolyResolver {
 
 }}//end namespace detail::AreaExtractor
 
-class AreaExtractor {
+class AreaExtractor: public detail::AreaExtractor::Base {
 public:
 	struct ValueType {
 		std::unordered_map<std::string, std::string> kv;
 		std::shared_ptr<sserialize::spatial::GeoRegion> * region;
 	};
-	typedef enum { ET_NONE=0, ET_BOUNDARIES=0x1, ET_LANDUSE=0x2, ET_AREA=0x4, ET_BUILDING=0x4|0x8, ET_ALL_BUT_BUILDINGS=ET_BOUNDARIES|ET_LANDUSE|ET_AREA, ET_ALL=ET_ALL_BUT_BUILDINGS|ET_BUILDING} ExtractionTypes;
 public:
 	AreaExtractor() {}
 	virtual ~AreaExtractor() {}
 	///@param processor (const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive), MUST be thread-safe
 	template<typename TProcessor>
 	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_BUT_BUILDINGS, bool needsName = true);
-	static generics::RCPtr<osmpbf::AbstractTagFilter> createExtractionFilter(ExtractionTypes extractionTypes, bool needsName);
 };
 
 
