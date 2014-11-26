@@ -84,6 +84,8 @@ public:
 		m_refineMinDiag = minDiag;
 	}
 	
+	///you can still add more regions after calling this but they will not be part of the tree
+	///if you want teh min the tree aswell than you should call this again (which will rebuild the tree)
 	void addPolygonsToRaster(unsigned int gridLatCount, unsigned int gridLonCount) {
 		FixedSizeDiagRefiner refiner(m_refineMinDiag, m_latRefineCount, m_lonRefineCount);
 		sserialize::spatial::GeoRect initRect( sserialize::spatial::GeoShape::bounds(m_regions.cbegin(), m_regions.cend()) );
