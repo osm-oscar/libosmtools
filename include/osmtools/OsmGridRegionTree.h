@@ -2,6 +2,7 @@
 #define OSM_TOOLS_GRID_REGION_TREE_H
 #include <sserialize/spatial/GridRegionTree.h>
 #include <sserialize/spatial/DistanceCalculator.h>
+#include <sserialize/utility/RangeGenerator.h>
 #include <mutex>
 
 namespace osmtools {
@@ -54,6 +55,19 @@ public:
 		for(std::vector<sserialize::spatial::GeoRegion*>::iterator it(m_regions.begin()), end(m_regions.end()); it != end; ++it) {
 			delete *it;
 		}
+	}
+	///You should only call this prior to calling addPolygonsToRaster
+	///polygon ids are invalid afterwards
+	template<typename T_COMPARE>
+	void sort(T_COMPARE compfunc) {
+		sserialize::RangeGenerator rg(0, size());
+		std::vector<uint32_t> tmp(rg.cbegin(), rg.cend());
+		std::vector<value_type> * valuesPtr = &m_values;
+		std::sort(tmp.begin(), tmp.end(), [compfunc, valuesPtr](uint32_t a, uint32_t b) {
+			return compfunc(valuesPtr->at(a), valuesPtr->at(b));
+		});
+		sserialize::reorder(m_values, tmp);
+		sserialize::reorder(m_regions, tmp);
 	}
 	inline void printStats(std::ostream & out) {
 		m_grt.printStats(out);
