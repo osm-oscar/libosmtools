@@ -29,10 +29,10 @@ generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(Extracti
 		if ((extractionTypes & ET_BUILDING) != ET_BUILDING) {
 			areaExclusions.push_back(new osmpbf::BoolTagFilter("building", false));
 		}
-		if (! extractionTypes & ET_BOUNDARIES) {
+		if (! (extractionTypes & ET_BOUNDARIES)) {
 			areaExclusions.push_back(new osmpbf::BoolTagFilter("boundary", false));
 		}
-		if (! extractionTypes & ET_LANDUSE) {
+		if (! (extractionTypes & ET_LANDUSE) ) {
 			areaExclusions.push_back(new osmpbf::BoolTagFilter("landuse", false));
 		}
 		if (areaExclusions.size()) {
