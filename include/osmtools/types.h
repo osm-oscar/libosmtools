@@ -6,11 +6,11 @@
 
 namespace osmtools {
 
-typedef sserialize::IFLArray<sserialize::spatial::GeoPoint*, const sserialize::spatial::GeoPoint*> PolygonPointsContainer;
+typedef sserialize::IFLArray<sserialize::spatial::GeoPoint> PolygonPointsContainer;
 
 typedef sserialize::spatial::detail::GeoPolygon<PolygonPointsContainer> OsmGeoPolygon;
 
-typedef sserialize::IFLArray<OsmGeoPolygon*, const OsmGeoPolygon*> OsmGeoPolygonsContainer;
+typedef sserialize::IFLArray<OsmGeoPolygon> OsmGeoPolygonsContainer;
 
 typedef sserialize::spatial::detail::GeoMultiPolygon<OsmGeoPolygonsContainer> OsmGeoMultiPolygon;
 
