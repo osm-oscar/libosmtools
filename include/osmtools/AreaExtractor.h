@@ -11,6 +11,7 @@
 #include <osmpbf/iway.h>
 #include <osmpbf/inode.h>
 #include <osmtools/AreaExtractorFilters.h>
+#include <osmpbf/parsehelpers.h>
 
 /** This is a simple class to extract areas from OpenStreetMap pbf-files
   * It needs the osmpbf and sserialize libraries in global include paths
@@ -72,6 +73,80 @@ public:
 		std::unordered_map<std::string, std::string> kv;
 		std::shared_ptr<sserialize::spatial::GeoRegion> * region;
 	};
+private:
+	typedef std::pair<double, double> Point;
+	struct Context {
+		std::unordered_map<int64_t, detail::AreaExtractor::MultiPolyResolver::RawWay > rawWays;
+		std::mutex rawWaysLock;
+		
+		std::unordered_map<int64_t, Point> nodes;
+		std::mutex nodesLock;
+		
+		osmpbf::OSMFileIn inFile;
+		ExtractionTypes extractionTypes;
+		bool needsName;
+		sserialize::ProgressInfo pinfo;
+		
+		std::atomic<uint32_t> relevantWaysSize;
+		std::atomic<uint32_t> relevantRelationsSize;
+		
+		std::atomic<uint32_t> assembledRelevantWays;
+		std::atomic<uint32_t> assembledRelevantRelations;
+		
+		Context(const std::string & filename) : inFile(filename), relevantWaysSize(0), relevantRelationsSize(0), assembledRelevantWays(0), assembledRelevantRelations(0) {}
+	};
+	struct ExtractorCallBack {
+		virtual void operator()(const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive) = 0;
+	};
+	struct ExtractionFunctorBase {
+		Context * ctx;
+		osmpbf::PrimitiveBlockInputAdaptor * pbi;
+		generics::RCPtr<osmpbf::AbstractTagFilter> mainFilter;
+		void assignInputAdaptor(osmpbf::PrimitiveBlockInputAdaptor & pbi);
+		ExtractionFunctorBase(Context * ctx);
+		ExtractionFunctorBase(const ExtractionFunctorBase & other);
+		~ExtractionFunctorBase() {}
+	};
+	//Private compressor
+	struct RelationWaysExtractor: ExtractionFunctorBase {
+		RelationWaysExtractor(Context * ctx) : ExtractionFunctorBase(ctx) {}
+		RelationWaysExtractor(const RelationWaysExtractor & o) : ExtractionFunctorBase(o) {}
+		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
+	};
+	//Private compressor
+	struct WayRefsExtractor: ExtractionFunctorBase {
+		WayRefsExtractor(Context * ctx) : ExtractionFunctorBase(ctx) {}
+		WayRefsExtractor(const WayRefsExtractor & o) : ExtractionFunctorBase(o) {}
+		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
+	};
+	//No private processor
+	struct RelationWayNodeRefsExtractor {
+		Context * ctx;
+		RelationWayNodeRefsExtractor(Context * ctx) : ctx(ctx) {}
+		RelationWayNodeRefsExtractor(const RelationWayNodeRefsExtractor & o) : ctx(o.ctx) {}
+		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
+	};
+	//Private compressor
+	struct WayExtractor: ExtractionFunctorBase {
+		ExtractorCallBack * cb;
+		WayExtractor(Context * ctx, ExtractorCallBack * cb) : ExtractionFunctorBase(ctx), cb(cb) {}
+		WayExtractor(const WayExtractor & o) : ExtractionFunctorBase(o), cb(o.cb) {}
+		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
+	};
+	//Private compressor
+	struct RelationExtractor: ExtractionFunctorBase {
+		ExtractorCallBack * cb;
+		RelationExtractor(Context * ctx, ExtractorCallBack * cb) : ExtractionFunctorBase(ctx), cb(cb) {}
+		RelationExtractor(const RelationExtractor & o) : ExtractionFunctorBase(o), cb(o.cb) {}
+		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
+	};
+	//No private processor
+	struct NodeGatherer {
+		Context * ctx;
+		NodeGatherer(Context * ctx) : ctx(ctx) {}
+		NodeGatherer(const NodeGatherer & o) : ctx(o.ctx) {}
+		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
+	};
 public:
 	AreaExtractor() {}
 	virtual ~AreaExtractor() {}
@@ -80,216 +155,84 @@ public:
 	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_BUT_BUILDINGS, bool needsName = true);
 };
 
-
 template<typename TProcessor>
 bool AreaExtractor::extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes, bool needsName) {
 	if (! (extractionTypes & ET_ALL)) {
 		return false;
 	}
+	
+	Context ctx(inputFileName);
+	ctx.extractionTypes = extractionTypes;
+	ctx.needsName = needsName;
 
-	osmpbf::OSMFileIn inFile(inputFileName, false);
 	osmpbf::PrimitiveBlockInputAdaptor pbi;
 
-	if (!inFile.open()) {
+	if (!ctx.inFile.open()) {
 		std::cout << "Failed to open " <<  inputFileName << std::endl;
 		return -1;
 	}
-	std::unordered_map<int64_t, detail::AreaExtractor::MultiPolyResolver::RawWay > rawWays;
-	std::unordered_map<int64_t, sserialize::spatial::GeoPoint> nodes;
 	
-	std::unordered_set<int64_t> relevantWays;
-	std::unordered_set<int64_t> relevantRelations;
-
-	generics::RCPtr<osmpbf::AbstractTagFilter> mainFilter(createExtractionFilter(extractionTypes, needsName));
-	
-	mainFilter->assignInputAdaptor(&pbi);
-
-	sserialize::ProgressInfo progress;
-	
-	progress.begin(inFile.dataSize(), "AreaExtractor: Nodes/Way-Refs");
-	while (inFile.parseNextBlock(pbi)) {
-		if (pbi.isNull())
-			continue;
-
-
-		progress(inFile.dataPosition());
-
-		if (!mainFilter->rebuildCache()) {
-			continue;
+	struct MyCB: ExtractorCallBack {
+		TProcessor * processor;
+		virtual void operator()(const std::shared_ptr< sserialize::spatial::GeoRegion >& region, osmpbf::IPrimitive& primitive) {
+			(*processor)(region, primitive);
 		}
+	} cb;
+	cb.processor = &processor;
+	
+	NodeGatherer ng(&ctx);
+	
+	{
+		WayRefsExtractor wre(&ctx);
+		WayExtractor we(&ctx, &cb);
+
+		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Ways' node-refs");
+		ctx.inFile.reset();
+		osmpbf::parseFileCPPThreads(ctx.inFile, wre, 0, 1, true);
+		ctx.pinfo.end();
+
+		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Ways' nodes");
+		ctx.inFile.reset();
+		osmpbf::parseFileCPPThreads(ctx.inFile, ng, 0, 1, false);
+		ctx.pinfo.end();
 		
-		if (pbi.waysSize()) {
-			for(osmpbf::IWayStream way(pbi.getWayStream()); !way.isNull(); way.next()) {
-				if (way.refsSize() > 4 && *way.refBegin() == *(way.refBegin()+(way.refsSize()-1)) && mainFilter->matches(way)) {
-					for(osmpbf::IWayStream::RefIterator it(way.refBegin()), end(way.refEnd()); it != end; ++it) {
-						nodes[*it];
-					}
-					relevantWays.insert(way.id());
-				}
-			}
-		}
+		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Assembling ways");
+		ctx.inFile.reset();
+		osmpbf::parseFileCPPThreads(ctx.inFile, WayExtractor(&ctx, &cb), 0, 1, true);
+		ctx.pinfo.end();
+	}
+	
+	ctx.nodes.clear();
+	{
+		RelationWaysExtractor rwe(&ctx);
+		RelationWayNodeRefsExtractor rwnr(&ctx);
+		RelationExtractor re(&ctx, &cb);
+
+		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Relation's ways");
+		ctx.inFile.reset();
+		osmpbf::parseFileCPPThreads(ctx.inFile, rwe, 0, 1, true);
+		ctx.pinfo.end();
+
+		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Relation-ways' node-refs");
+		ctx.inFile.reset();
+		osmpbf::parseFileCPPThreads(ctx.inFile, rwnr, 0, 1, false);
+		ctx.pinfo.end();
 		
-		if (pbi.relationsSize()) {
-
-			for (osmpbf::IRelationStream rel = pbi.getRelationStream(); !rel.isNull(); rel.next()) {
-				if (mainFilter->matches(rel)) {
-					for(osmpbf::IMemberStream mem = rel.getMemberStream(); !mem.isNull(); mem.next()) {
-						if (mem.type() == osmpbf::WayPrimitive) {
-							rawWays[mem.id()];
-						}
-					}
-					relevantRelations.insert(rel.id());
-				}
-			}
-		}
-	}
-	progress.end();
-	
-	uint32_t readBlobCount = omp_get_num_procs();
-	bool processedFile = false;
-	
-	inFile.dataSeek(0);
-	progress.begin(inFile.dataSize(), "AreaExtractor: Ways of relations");
-	while (inFile.parseNextBlock(pbi)) {
-		if (pbi.isNull())
-			continue;
-		progress(inFile.dataPosition());
-
-		if (pbi.waysSize()) {
-			for (osmpbf::IWayStream way = pbi.getWayStream(); !way.isNull(); way.next()) {
-				int64_t wid = way.id();
-				if (rawWays.count(wid)) {
-					detail::AreaExtractor::MultiPolyResolver::RawWay & rw = rawWays[wid];
-					rw.reserve(way.refsSize());
-					for(osmpbf::IWayStream::RefIterator it(way.refBegin()), end(way.refEnd()); it != end; ++it) {
-						int64_t wr = *it;
-						rw.push_back(wr);
-						nodes[wr];
-					}
-				}
-			}
-		}
-	}
-	progress.end();
-	
-
-	inFile.dataSeek(0);
-	progress.begin(inFile.dataSize(), "AreaExtractor: Gathering nodes");
-	while (!processedFile) {
+		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Relation-ways' nodes");
+		ctx.inFile.reset();
+		osmpbf::parseFileCPPThreads(ctx.inFile, ng, 0, 1, false);
+		ctx.pinfo.end();
 		
-		std::vector<osmpbf::BlobDataBuffer> pbiBuffers;
-		inFile.getNextBlocks(pbiBuffers, readBlobCount);
-		uint32_t pbiCount = pbiBuffers.size();
-		processedFile = (pbiCount < readBlobCount);
-		#pragma omp parallel for
-		for(uint32_t i = 0; i < pbiCount; ++i) {
-			osmpbf::PrimitiveBlockInputAdaptor pbi(pbiBuffers[i].data, pbiBuffers[i].availableBytes);
-			pbiBuffers[i].clear();
-			if (pbi.isNull()) {
-				continue;
-			}
-
-			if (pbi.nodesSize()) {
-				for(osmpbf::INodeStream node(pbi.getNodeStream()); !node.isNull(); node.next()) {
-					int64_t nid = node.id();
-					if (nodes.count( nid ) ) {
-						sserialize::spatial::GeoPoint & gp = nodes.at(nid);
-						gp.lat() = node.latd();
-						gp.lon() = node.lond();
-					}
-				}
-			}
-		}
-		progress(inFile.dataPosition());
+		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Assembling relations");
+		ctx.inFile.reset();
+		osmpbf::parseFileCPPThreads(ctx.inFile, re, 0, 1, true);
+		ctx.pinfo.end();
 	}
-	progress.end();
-	
-	std::size_t relevantWaysSize = relevantWays.size();
-	std::size_t relevantRelationsSize = relevantRelations.size();
-	std::size_t assembledRelevantWays = 0;
-	std::size_t assembledRelevantRelations = 0;
-	
-	inFile.dataSeek(0);
-	progress.begin(inFile.dataSize(), "AreaExtractor: Assembling");
-	while (inFile.parseNextBlock(pbi)) {
-		if (pbi.isNull())
-			continue;
-		progress(inFile.dataPosition());
+	ctx.nodes.clear();
 
-		if (pbi.waysSize()) {
-			for(osmpbf::IWayStream way(pbi.getWayStream()); !way.isNull(); way.next()) {
-				int64_t wid = way.id();
-				if (!relevantWays.count(wid)) {
-					continue;
-				}
-				relevantWays.erase(wid);
-				std::shared_ptr<sserialize::spatial::GeoPolygon> gpo( new sserialize::spatial::GeoPolygon() );
-				sserialize::spatial::GeoPolygon::PointsContainer & gpops = gpo->points();
-				gpops.reserve(way.refsSize());
-				for(osmpbf::IWayStream::RefIterator it(way.refBegin()), end(way.refEnd()); it != end; ++it) {
-					int64_t wr = *it;
-					if (nodes.count(wr)) {
-						gpops.push_back(nodes[wr]);
-					}
-					else {
-						std::cout << "Way has missing node" << std::endl;
-						break;
-					}
-				}
-				if (gpo->points().size()) {
-					gpo->recalculateBoundary();
-					processor(gpo, way);
-					++assembledRelevantWays;
-				}
-			}
-		}
-		if (pbi.relationsSize()) {
-			for(osmpbf::IRelationStream rel(pbi.getRelationStream()); !rel.isNull(); rel.next()) {
-				int64_t relId = rel.id();
-				
-				if (!relevantRelations.count(relId)) {
-					continue;
-				}
-				relevantRelations.erase(relId);
-				std::vector< detail::AreaExtractor::MultiPolyResolver::RawWay > outerWays, innerWays;
-				
-				bool allWaysAvailable = true;
-				
-				for(osmpbf::IMemberStream mem = rel.getMemberStream(); !mem.isNull(); mem.next()) {
-					if (mem.type() == osmpbf::WayPrimitive) {
-						if (rawWays.count(mem.id()) && rawWays[mem.id()].size()) {
-							const detail::AreaExtractor::MultiPolyResolver::RawWay & rw = rawWays[ mem.id() ];
-							if (mem.role() == "outer" || mem.role() == "" || mem.role() == "exclave" || mem.role() == "Outer" || mem.role() == "outer:FIXME") {
-								outerWays.push_back(rw);
-							}
-							else if (mem.role() == "inner" || mem.role() == "enclave") {
-								innerWays.push_back(rw);
-							}
-							else {
-								std::cout << "Illegal role in relation " << rel.id() << ": " << mem.role() << std::endl;
-							}
-						}
-						else {
-							allWaysAvailable = false;
-						}
-					}
-				}
-				if (outerWays.size() && !detail::AreaExtractor::MultiPolyResolver::multiPolyFromWays(innerWays, outerWays, innerWays, outerWays) && allWaysAvailable) {
-					std::cout << "Failed to fully create MultiPolygon from multiple ways for relation " << rel.id() << std::endl;
-				}
-				if (outerWays.size()) {
-					std::shared_ptr<sserialize::spatial::GeoRegion> gmpo( detail::AreaExtractor::MultiPolyResolver::multiPolyFromClosedWays(innerWays, outerWays, nodes) );
-					processor(gmpo, rel);
-					++assembledRelevantRelations;
-				}
-			}
-		}
-	}
-	progress.end();
+	std::cout << "Assembled " << ctx.assembledRelevantWays << "/" << ctx.relevantWaysSize << " boundary ways and " << ctx.assembledRelevantRelations << "/" << ctx.relevantRelationsSize << " boundary relations" << std::endl;
 	
-	std::cout << "Assembled " << assembledRelevantWays << "/" << relevantWaysSize << " boundary ways and " << assembledRelevantRelations << "/" << relevantRelationsSize << " boundary relations" << std::endl;
-	
-	inFile.close();
+	ctx.inFile.close();
 	
 	return true;
 }
