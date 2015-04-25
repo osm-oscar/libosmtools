@@ -3,14 +3,19 @@
 #include <sserialize/containers/CFLArray.h>
 #include <sserialize/spatial/GeoPolygon.h>
 #include <sserialize/spatial/GeoMultiPolygon.h>
+#include <sserialize/templated/MMVector.h>
 
 namespace osmtools {
 
-typedef sserialize::CFLArray<sserialize::spatial::GeoPoint, sserialize::detail::CFLArray::DefaultPointerGetter<sserialize::spatial::GeoPoint, false> > PolygonPointsContainer;
+typedef sserialize::MMVector<sserialize::spatial::GeoPoint> GeoPointStorageBackend;
+
+typedef sserialize::CFLArray<GeoPointStorageBackend> PolygonPointsContainer;
 
 typedef sserialize::spatial::detail::GeoPolygon<PolygonPointsContainer> OsmGeoPolygon;
 
-typedef sserialize::CFLArray<OsmGeoPolygon, sserialize::detail::CFLArray::DefaultPointerGetter<OsmGeoPolygon, false> > OsmGeoPolygonsContainer;
+typedef sserialize::MMVector<OsmGeoPolygon> OsmGeoPolygonStorageBackend;
+
+typedef sserialize::CFLArray<OsmGeoPolygonStorageBackend> OsmGeoPolygonsContainer;
 
 typedef sserialize::spatial::detail::GeoMultiPolygon<OsmGeoPolygonsContainer> OsmGeoMultiPolygon;
 

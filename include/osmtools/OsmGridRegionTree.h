@@ -3,7 +3,6 @@
 #include <sserialize/spatial/GridRegionTree.h>
 #include <sserialize/spatial/DistanceCalculator.h>
 #include <sserialize/utility/RangeGenerator.h>
-#include <sserialize/templated/MMVector.h>
 #include <sserialize/utility/printers.h>
 #include <osmtools/types.h>
 #include <mutex>
@@ -21,49 +20,49 @@ public:
 	typedef osmtools::OsmGeoPolygon GeoPolygon;
 	typedef osmtools::OsmGeoMultiPolygon GeoMultiPolygon;
 private:
-	typedef sserialize::MMVector<sserialize::spatial::GeoPoint> PointDataContainer;
-	typedef sserialize::MMVector<osmtools::OsmGeoPolygon> PolygonsContainer;
+	typedef GeoPointStorageBackend PointDataContainer;
+	typedef OsmGeoPolygonStorageBackend PolygonsContainer;
 
 	template<typename T_GP_TYPE>
 	struct ConvertGP {
-		static sserialize::spatial::GeoRegion* conv(PointDataContainer & pointsDest, sserialize::spatial::GeoRegion * r) {
-			T_GP_TYPE * gp = static_cast<T_GP_TYPE*>(r);
-			sserialize::spatial::GeoPoint* pointsBegin = pointsDest.end();
+		static sserialize::spatial::GeoRegion* conv(PointDataContainer & pointsDest, const sserialize::spatial::GeoRegion * r) {
+			const T_GP_TYPE * gp = static_cast<const T_GP_TYPE*>(r);
+			sserialize::OffsetType pointsBegin = pointsDest.size();
 			uint32_t pointsSize = gp->size();
-			pointsDest.push_back(gp->begin(), gp->end());
-			return new osmtools::OsmGeoPolygon(osmtools::OsmGeoPolygon::PointsContainer(pointsBegin, pointsSize));
+			pointsDest.push_back(gp->cbegin(), gp->cend());
+			return new osmtools::OsmGeoPolygon(osmtools::OsmGeoPolygon::PointsContainer(&pointsDest, pointsBegin, pointsSize));
 		}
 	};
 		
 	template<typename T_GMP_TYPE>
 	struct ConvertGMP {
-		static sserialize::spatial::GeoRegion* conv(PointDataContainer & pointsDest, PolygonsContainer & polygonsDest, sserialize::spatial::GeoRegion * r) {
+		static sserialize::spatial::GeoRegion* conv(PointDataContainer & pointsDest, PolygonsContainer & polygonsDest, const sserialize::spatial::GeoRegion * r) {
 			typedef typename T_GMP_TYPE::GeoPolygon MyGeoPolygon;
-			T_GMP_TYPE * gmp = static_cast<T_GMP_TYPE*>(r);
+			const T_GMP_TYPE * gmp = static_cast<const T_GMP_TYPE*>(r);
 
 			assert(gmp->outerPolygons().size() + gmp->innerPolygons().size() + polygonsDest.size() <= polygonsDest.capacity());
 
 
-			OsmGeoPolygon* outerBegin = polygonsDest.end();
-			OsmGeoPolygon* innerBegin = 0;
+			sserialize::OffsetType outerBegin = polygonsDest.size();
+			sserialize::OffsetType innerBegin = 0;
 			
-			for(MyGeoPolygon & gp : gmp->outerPolygons()) {
-				sserialize::spatial::GeoPoint* pointsBegin = pointsDest.end();
+			for(const MyGeoPolygon & gp : gmp->outerPolygons()) {
+				sserialize::OffsetType pointsBegin = pointsDest.size();
 				uint32_t pointsSize = gp.size();
-				pointsDest.push_back(gp.begin(), gp.end());
-				polygonsDest.emplace_back(gp.boundary(), osmtools::OsmGeoPolygon::PointsContainer(pointsBegin, pointsSize));
+				pointsDest.push_back(gp.cbegin(), gp.cend());
+				polygonsDest.emplace_back(gp.boundary(), osmtools::OsmGeoPolygon::PointsContainer(&pointsDest, pointsBegin, pointsSize));
 			}
-			innerBegin = polygonsDest.end();
-			for(MyGeoPolygon & gp : gmp->innerPolygons()) {
-				sserialize::spatial::GeoPoint* pointsBegin = pointsDest.end();
+			innerBegin = polygonsDest.size();
+			for(const MyGeoPolygon & gp : gmp->innerPolygons()) {
+				sserialize::OffsetType pointsBegin = pointsDest.size();
 				uint32_t pointsSize = gp.size();
-				pointsDest.push_back(gp.begin(), gp.end());
-				polygonsDest.emplace_back(gp.boundary(), osmtools::OsmGeoPolygon::PointsContainer(pointsBegin, pointsSize));
+				pointsDest.push_back(gp.cbegin(), gp.cend());
+				polygonsDest.emplace_back(gp.boundary(), osmtools::OsmGeoPolygon::PointsContainer(&pointsDest, pointsBegin, pointsSize));
 			}
 			
 			return new osmtools::OsmGeoMultiPolygon(gmp->size(),
-													osmtools::OsmGeoMultiPolygon::PolygonList(outerBegin, gmp->outerPolygons().size()),
-													osmtools::OsmGeoMultiPolygon::PolygonList(innerBegin, gmp->innerPolygons().size()),
+													osmtools::OsmGeoMultiPolygon::PolygonList(&polygonsDest, outerBegin, gmp->outerPolygons().size()),
+													osmtools::OsmGeoMultiPolygon::PolygonList(&polygonsDest, innerBegin, gmp->innerPolygons().size()),
 													gmp->outerPolygonsBoundary(),
 													gmp->innerPolygonsBoundary()
 			);
@@ -99,79 +98,6 @@ private:
 		}
 	};
 private:
-	void flattenRegions() {
-		PointDataContainer tmpPoints(sserialize::MM_SHARED_MEMORY);
-		PolygonsContainer tmpPolygons(sserialize::MM_SHARED_MEMORY);
-		
-		PointDataContainer::size_type pointCount = 0;
-		PolygonsContainer::size_type polygonsCount = 0;
-		for(sserialize::spatial::GeoRegion* r : m_regions) {
-			pointCount += r->size();
-			if (r->type() == sserialize::spatial::GS_MULTI_POLYGON) {
-				if (dynamic_cast<sserialize::spatial::GeoMultiPolygon*>(r)) {
-					sserialize::spatial::GeoMultiPolygon* mp = static_cast<sserialize::spatial::GeoMultiPolygon*>(r);
-					polygonsCount += mp->innerPolygons().size() + mp->outerPolygons().size();
-				}
-				else if (dynamic_cast<osmtools::OsmGeoMultiPolygon*>(r)) {
-					osmtools::OsmGeoMultiPolygon* mp = static_cast<osmtools::OsmGeoMultiPolygon*>(r);
-					polygonsCount += mp->innerPolygons().size() + mp->outerPolygons().size();
-				}
-				else {
-					sserialize::TypeMissMatchException("OsmGridRegionTree");
-				}
-			}
-		}
-		tmpPoints.reserve(pointCount);
-		tmpPolygons.reserve(polygonsCount);
-// 		for(sserialize::spatial::GeoRegion* &r : m_regions) {
-		for(uint32_t i(0), s(m_regions.size()); i < s; ++i) {
-			sserialize::spatial::GeoRegion* &r = m_regions[i];
-			sserialize::spatial::GeoRegion* tmp = r;
-			PolygonPointsContainer::size_type prevCount = tmpPoints.size();
-			if (i == 13501) {
-				std::cout << "da" << std::endl;
-			}
-			switch (r->type()) {
-			case sserialize::spatial::GS_POLYGON:
-				if (dynamic_cast<sserialize::spatial::GeoPolygon*>(r)) {
-					r = ConvertGP<sserialize::spatial::GeoPolygon>::conv(tmpPoints, r);
-				}
-				else if (dynamic_cast<osmtools::OsmGeoPolygon*>(r)) {
-					r = ConvertGP<osmtools::OsmGeoPolygon>::conv(tmpPoints, r);
-				}
-				else {
-					sserialize::TypeMissMatchException("OsmGridRegionTree");
-				}
-				break;
-			case sserialize::spatial::GS_MULTI_POLYGON:
-				if (dynamic_cast<sserialize::spatial::GeoMultiPolygon*>(r)) {
-					r = ConvertGMP<sserialize::spatial::GeoMultiPolygon>::conv(tmpPoints, tmpPolygons, r);
-				}
-				else if (dynamic_cast<osmtools::OsmGeoMultiPolygon*>(r)) {
-					r = ConvertGMP<osmtools::OsmGeoMultiPolygon>::conv(tmpPoints, tmpPolygons, r);
-				}
-				else {
-					sserialize::TypeMissMatchException("OsmGridRegionTree");
-				}
-				break;
-			default:
-				throw sserialize::TypeMissMatchException("OsmGridRegionTree");
-				break;
-			}
-			assert(tmpPolygons.size() <= polygonsCount);
-			assert(r->size() == tmp->size());
-			r->recalculateBoundary();
-			assert(tmp->size() == tmpPoints.size()-prevCount);
-			assert(r->size() == tmp->size());
-			
-			delete tmp;
-		}
-		assert(tmpPoints.size() == pointCount);
-		assert(tmpPolygons.size() == polygonsCount);
-		m_polygonPoints = std::move(tmpPoints);
-		m_polygonsContainer = std::move(tmpPolygons);
-	}
-private:
 	sserialize::spatial::GridRegionTree m_grt;
 	PointDataContainer m_polygonPoints;
 	PolygonsContainer m_polygonsContainer;
@@ -181,8 +107,42 @@ private:
 	uint32_t m_latRefineCount;
 	uint32_t m_lonRefineCount;
 	double m_refineMinDiag;
+private:
+	void push_back(const sserialize::spatial::GeoRegion * p) {
+		sserialize::spatial::GeoRegion * r = 0;
+		switch (r->type()) {
+		case sserialize::spatial::GS_POLYGON:
+			if (dynamic_cast<const sserialize::spatial::GeoPolygon*>(p)) {
+				r = ConvertGP<sserialize::spatial::GeoPolygon>::conv(m_polygonPoints, p);
+			}
+			else if (dynamic_cast<const osmtools::OsmGeoPolygon*>(p)) {
+				r = ConvertGP<osmtools::OsmGeoPolygon>::conv(m_polygonPoints, p);
+			}
+			else {
+				sserialize::TypeMissMatchException("OsmGridRegionTree");
+			}
+			break;
+		case sserialize::spatial::GS_MULTI_POLYGON:
+			if (dynamic_cast<const sserialize::spatial::GeoMultiPolygon*>(p)) {
+				r = ConvertGMP<sserialize::spatial::GeoMultiPolygon>::conv(m_polygonPoints, m_polygonsContainer, p);
+			}
+			else if (dynamic_cast<const osmtools::OsmGeoMultiPolygon*>(p)) {
+				r = ConvertGMP<osmtools::OsmGeoMultiPolygon>::conv(m_polygonPoints, m_polygonsContainer, p);
+			}
+			else {
+				sserialize::TypeMissMatchException("OsmGridRegionTree");
+			}
+			break;
+		default:
+			throw sserialize::TypeMissMatchException("OsmGridRegionTree");
+			break;
+		}
+		assert(r->size() == p.size());
+		r->recalculateBoundary();
+		assert(r->size() == tmp->size());
+	}
 public:
-	OsmGridRegionTree() : m_latRefineCount(2), m_lonRefineCount(2), m_refineMinDiag(250) {}
+	OsmGridRegionTree() : m_polygonPoints(sserialize::MM_SHARED_MEMORY), m_polygonsContainer(sserialize::MM_SHARED_MEMORY), m_latRefineCount(2), m_lonRefineCount(2), m_refineMinDiag(250) {}
 	~OsmGridRegionTree() {
 		for(std::vector<sserialize::spatial::GeoRegion*>::iterator it(m_regions.begin()), end(m_regions.end()); it != end; ++it) {
 			delete *it;
@@ -216,7 +176,7 @@ public:
 	uint32_t push_back(const sserialize::spatial::GeoRegion & p, const value_type & value) {
 		std::unique_lock<std::mutex> (m_mtx);
 		uint32_t pid = m_regions.size();
-		m_regions.push_back(static_cast<sserialize::spatial::GeoRegion*>( p.copy() ));
+		this->push_back(&p);
 		m_values.push_back(value);
 		return pid;
 	}
@@ -224,7 +184,7 @@ public:
 	uint32_t push_back(const sserialize::spatial::GeoRegion & p, value_type && value) {
 		std::unique_lock<std::mutex> lck(m_mtx);
 		uint32_t pid = m_regions.size();
-		m_regions.push_back(static_cast<sserialize::spatial::GeoRegion*>(p.copy()));
+		this->push_back(&p);
 		m_values.emplace_back(value);
 		return pid;
 	}
@@ -237,7 +197,6 @@ public:
 	///you can still add more regions after calling this but they will not be part of the tree
 	///if you want them in the tree aswell then you should call this again (which will rebuild the tree)
 	void addPolygonsToRaster(unsigned int gridLatCount, unsigned int gridLonCount) {
-		flattenRegions();
 		FixedSizeDiagRefiner refiner(m_refineMinDiag, m_latRefineCount, m_lonRefineCount);
 		sserialize::spatial::GeoRect initRect( sserialize::spatial::GeoShape::bounds(m_regions.cbegin(), m_regions.cend()) );
 		sserialize::spatial::GeoGrid initGrid(initRect, gridLatCount, gridLonCount);
