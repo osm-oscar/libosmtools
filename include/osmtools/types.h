@@ -1,16 +1,16 @@
 #ifndef OSM_TOOLS_TYPES_H
 #define OSM_TOOLS_TYPES_H
-#include <sserialize/containers/IFLArray.h>
+#include <sserialize/containers/CFLArray.h>
 #include <sserialize/spatial/GeoPolygon.h>
 #include <sserialize/spatial/GeoMultiPolygon.h>
 
 namespace osmtools {
 
-typedef sserialize::IFLArray<sserialize::spatial::GeoPoint> PolygonPointsContainer;
+typedef sserialize::CFLArray<sserialize::spatial::GeoPoint, sserialize::detail::CFLArray::DefaultPointerGetter<sserialize::spatial::GeoPoint, false> > PolygonPointsContainer;
 
 typedef sserialize::spatial::detail::GeoPolygon<PolygonPointsContainer> OsmGeoPolygon;
 
-typedef sserialize::IFLArray<OsmGeoPolygon> OsmGeoPolygonsContainer;
+typedef sserialize::CFLArray<OsmGeoPolygon, sserialize::detail::CFLArray::DefaultPointerGetter<OsmGeoPolygon, false> > OsmGeoPolygonsContainer;
 
 typedef sserialize::spatial::detail::GeoMultiPolygon<OsmGeoPolygonsContainer> OsmGeoMultiPolygon;
 
