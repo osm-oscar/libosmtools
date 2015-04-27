@@ -139,20 +139,21 @@ void AreaExtractor::WayRefsExtractor::operator()(osmpbf::PrimitiveBlockInputAdap
 	}
 	
 	uint32_t myRelevantWays = 0;
-	std::unordered_set<int64_t> refs;
+	myRefs.clear();
 	
 	for(osmpbf::IWayStream way(pbi.getWayStream()); !way.isNull(); way.next()) {
 		if (way.refsSize() > 4 && *way.refBegin() == *(way.refBegin()+(way.refsSize()-1)) && mainFilter->matches(way)) {
-			refs.insert(way.refBegin(), way.refEnd());
+			myRefs.insert(way.refBegin(), way.refEnd());
 			++myRelevantWays;
 		}
 	}
 	ctx->relevantWaysSize += myRelevantWays;
 	std::unique_lock<std::mutex> lck(ctx->nodesLock);
-	ctx->nodes.reserve(ctx->nodes.size()+refs.size());
-	for(int64_t x : refs) {
+	ctx->nodes.reserve(ctx->nodes.size()+myRefs.size());
+	for(int64_t x : myRefs) {
 		ctx->nodes[x];
 	}
+	myRefs.clear();
 }
 
 void AreaExtractor::WayExtractor::operator()(osmpbf::PrimitiveBlockInputAdaptor& pbi) {
@@ -207,7 +208,7 @@ void AreaExtractor::RelationWaysExtractor::operator()(osmpbf::PrimitiveBlockInpu
 	}
 	
 	uint32_t myRelevantRelations = 0;
-	std::unordered_set<int64_t> myWayIds;
+	myWayIds.clear();
 	
 	for (osmpbf::IRelationStream rel = pbi.getRelationStream(); !rel.isNull(); rel.next()) {
 		if (mainFilter->matches(rel)) {
@@ -225,6 +226,7 @@ void AreaExtractor::RelationWaysExtractor::operator()(osmpbf::PrimitiveBlockInpu
 	for(int64_t x : myWayIds) {
 		ctx->rawWays[x];
 	}
+	myWayIds.clear();
 }
 
 void AreaExtractor::RelationWayNodeRefsExtractor::operator()(osmpbf::PrimitiveBlockInputAdaptor& pbi) {
@@ -233,7 +235,7 @@ void AreaExtractor::RelationWayNodeRefsExtractor::operator()(osmpbf::PrimitiveBl
 		return;
 	}
 	
-	std::unordered_set<int64_t> myWayRefs;
+	myWayRefs.clear();
 	
 	for (osmpbf::IWayStream way = pbi.getWayStream(); !way.isNull(); way.next()) {
 		int64_t wid = way.id();

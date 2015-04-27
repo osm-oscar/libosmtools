@@ -107,33 +107,36 @@ private:
 		ExtractionFunctorBase(const ExtractionFunctorBase & other);
 		~ExtractionFunctorBase() {}
 	};
-	//Private compressor
+	//Private processor
 	struct RelationWaysExtractor: ExtractionFunctorBase {
+		std::unordered_set<int64_t> myWayIds;
 		RelationWaysExtractor(Context * ctx) : ExtractionFunctorBase(ctx) {}
 		RelationWaysExtractor(const RelationWaysExtractor & o) : ExtractionFunctorBase(o) {}
 		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
 	};
-	//Private compressor
+	//Private processor
 	struct WayRefsExtractor: ExtractionFunctorBase {
+		std::unordered_set<int64_t> myRefs;
 		WayRefsExtractor(Context * ctx) : ExtractionFunctorBase(ctx) {}
 		WayRefsExtractor(const WayRefsExtractor & o) : ExtractionFunctorBase(o) {}
 		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
 	};
-	//No private processor
+	//Private processor
 	struct RelationWayNodeRefsExtractor {
 		Context * ctx;
+		std::unordered_set<int64_t> myWayRefs;
 		RelationWayNodeRefsExtractor(Context * ctx) : ctx(ctx) {}
 		RelationWayNodeRefsExtractor(const RelationWayNodeRefsExtractor & o) : ctx(o.ctx) {}
 		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
 	};
-	//Private compressor
+	//Private processor
 	struct WayExtractor: ExtractionFunctorBase {
 		ExtractorCallBack * cb;
 		WayExtractor(Context * ctx, ExtractorCallBack * cb) : ExtractionFunctorBase(ctx), cb(cb) {}
 		WayExtractor(const WayExtractor & o) : ExtractionFunctorBase(o), cb(o.cb) {}
 		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
 	};
-	//Private compressor
+	//Private processor
 	struct RelationExtractor: ExtractionFunctorBase {
 		ExtractorCallBack * cb;
 		RelationExtractor(Context * ctx, ExtractorCallBack * cb) : ExtractionFunctorBase(ctx), cb(cb) {}
@@ -151,12 +154,13 @@ public:
 	AreaExtractor() {}
 	virtual ~AreaExtractor() {}
 	///@param processor (const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive), MUST be thread-safe
+	///@param numThreads numver of threads, 0 for auto-detecting
 	template<typename TProcessor>
-	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_BUT_BUILDINGS, bool needsName = true);
+	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_BUT_BUILDINGS, bool needsName = true, uint32_t numThreads = 0);
 };
 
 template<typename TProcessor>
-bool AreaExtractor::extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes, bool needsName) {
+bool AreaExtractor::extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes, bool needsName, uint32_t numThreads) {
 	if (! (extractionTypes & ET_ALL)) {
 		return false;
 	}
@@ -188,17 +192,20 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Ways' node-refs");
 		ctx.inFile.reset();
-		osmpbf::parseFileCPPThreads(ctx.inFile, wre, 0, 1, true);
+		osmpbf::parseFileCPPThreads(ctx.inFile, wre, numThreads, 1, true);
 		ctx.pinfo.end();
+		
+		std::cout << "AreaExtractor: Found " << ctx.relevantWaysSize << " ways\n";
+		std::cout << "AreaExtractor: Need to fetch " << ctx.nodes.size() << " nodes" << std::endl;
 
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Ways' nodes");
 		ctx.inFile.reset();
-		osmpbf::parseFileCPPThreads(ctx.inFile, ng, 0, 1, false);
+		osmpbf::parseFileCPPThreads(ctx.inFile, ng, numThreads, 1, false);
 		ctx.pinfo.end();
 		
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Assembling ways");
 		ctx.inFile.reset();
-		osmpbf::parseFileCPPThreads(ctx.inFile, WayExtractor(&ctx, &cb), 0, 1, true);
+		osmpbf::parseFileCPPThreads(ctx.inFile, WayExtractor(&ctx, &cb), numThreads, 1, true);
 		ctx.pinfo.end();
 	}
 	
@@ -210,22 +217,26 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Relation's ways");
 		ctx.inFile.reset();
-		osmpbf::parseFileCPPThreads(ctx.inFile, rwe, 0, 1, true);
+		osmpbf::parseFileCPPThreads(ctx.inFile, rwe, numThreads, 1, true);
 		ctx.pinfo.end();
 
+		std::cout << "AreaExtractor: Found " << ctx.relevantRelationsSize << " relations with" << ctx.rawWays.size() << " ways \n";
+		
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Relation-ways' node-refs");
 		ctx.inFile.reset();
-		osmpbf::parseFileCPPThreads(ctx.inFile, rwnr, 0, 1, false);
+		osmpbf::parseFileCPPThreads(ctx.inFile, rwnr, numThreads, 1, true);
 		ctx.pinfo.end();
+		
+		std::cout << "AreaExtractor: Need to fetch " << ctx.nodes.size() << " nodes" << std::endl;
 		
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Relation-ways' nodes");
 		ctx.inFile.reset();
-		osmpbf::parseFileCPPThreads(ctx.inFile, ng, 0, 1, false);
+		osmpbf::parseFileCPPThreads(ctx.inFile, ng, numThreads, 1, false);
 		ctx.pinfo.end();
 		
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Assembling relations");
 		ctx.inFile.reset();
-		osmpbf::parseFileCPPThreads(ctx.inFile, re, 0, 1, true);
+		osmpbf::parseFileCPPThreads(ctx.inFile, re, numThreads, 1, true);
 		ctx.pinfo.end();
 	}
 	ctx.nodes.clear();
