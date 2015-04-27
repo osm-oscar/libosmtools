@@ -39,10 +39,6 @@ private:
 		static sserialize::spatial::GeoRegion* conv(PointDataContainer & pointsDest, PolygonsContainer & polygonsDest, const sserialize::spatial::GeoRegion * r) {
 			typedef typename T_GMP_TYPE::GeoPolygon MyGeoPolygon;
 			const T_GMP_TYPE * gmp = static_cast<const T_GMP_TYPE*>(r);
-
-			assert(gmp->outerPolygons().size() + gmp->innerPolygons().size() + polygonsDest.size() <= polygonsDest.capacity());
-
-
 			sserialize::OffsetType outerBegin = polygonsDest.size();
 			sserialize::OffsetType innerBegin = 0;
 			
@@ -110,7 +106,7 @@ private:
 private:
 	void push_back(const sserialize::spatial::GeoRegion * p) {
 		sserialize::spatial::GeoRegion * r = 0;
-		switch (r->type()) {
+		switch (p->type()) {
 		case sserialize::spatial::GS_POLYGON:
 			if (dynamic_cast<const sserialize::spatial::GeoPolygon*>(p)) {
 				r = ConvertGP<sserialize::spatial::GeoPolygon>::conv(m_polygonPoints, p);
@@ -137,9 +133,10 @@ private:
 			throw sserialize::TypeMissMatchException("OsmGridRegionTree");
 			break;
 		}
-		assert(r->size() == p.size());
+		assert(r->size() == p->size());
 		r->recalculateBoundary();
-		assert(r->size() == tmp->size());
+		assert(r->size() == p->size());
+		m_regions.push_back(r);
 	}
 public:
 	OsmGridRegionTree() : m_polygonPoints(sserialize::MM_SHARED_MEMORY), m_polygonsContainer(sserialize::MM_SHARED_MEMORY), m_latRefineCount(2), m_lonRefineCount(2), m_refineMinDiag(250) {}
