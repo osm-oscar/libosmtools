@@ -94,15 +94,29 @@ bool MultiPolyResolver::multiPolyFromWays(const std::vector<RawWay> & innerIn, c
 
 AreaExtractor::ExtractionFunctorBase::ExtractionFunctorBase(AreaExtractor::Context* ctx) :
 ctx(ctx),
-pbi(0),
-mainFilter( detail::AreaExtractor::Base::createExtractionFilter(ctx->extractionTypes, ctx->needsName))
-{}
+pbi(0)
+{
+	generics::RCPtr<osmpbf::AbstractTagFilter> tmp( detail::AreaExtractor::Base::createExtractionFilter(ctx->extractionTypes) );
+	if (ctx->externalFilter.get()) {
+		mainFilter.reset( osmpbf::newAnd(ctx->externalFilter->copy(), tmp.get()) );
+	}
+	else {
+		mainFilter = tmp;
+	}
+}
 
 AreaExtractor::ExtractionFunctorBase::ExtractionFunctorBase(const AreaExtractor::ExtractionFunctorBase & other) :
 ctx(other.ctx),
-pbi(0),
-mainFilter( detail::AreaExtractor::Base::createExtractionFilter(ctx->extractionTypes, ctx->needsName))
-{}
+pbi(0)
+{
+	generics::RCPtr<osmpbf::AbstractTagFilter> tmp( detail::AreaExtractor::Base::createExtractionFilter(ctx->extractionTypes) );
+	if (ctx->externalFilter.get()) {
+		mainFilter.reset( osmpbf::newAnd(ctx->externalFilter->copy(), tmp.get()) );
+	}
+	else {
+		mainFilter = tmp;
+	}
+}
 
 void AreaExtractor::ExtractionFunctorBase::assignInputAdaptor(osmpbf::PrimitiveBlockInputAdaptor& pbi) {
 	if (this->pbi != &pbi) {

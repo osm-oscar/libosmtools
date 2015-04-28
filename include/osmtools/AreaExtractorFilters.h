@@ -13,7 +13,7 @@ struct Base {
 	typedef enum {
 		ET_NONE=0, ET_BOUNDARIES=0x1, ET_LANDUSE=0x2, ET_AREA=0x4, ET_BUILDING=0x4|0x8,
 		ET_ALL_BUT_BUILDINGS=ET_BOUNDARIES|ET_LANDUSE|ET_AREA, ET_ALL=ET_ALL_BUT_BUILDINGS|ET_BUILDING} ExtractionTypes;
-	static generics::RCPtr<osmpbf::AbstractTagFilter> createExtractionFilter(ExtractionTypes extractionTypes, bool needsName);
+	static generics::RCPtr<osmpbf::AbstractTagFilter> createExtractionFilter(ExtractionTypes extractionTypes);
 };
 
 

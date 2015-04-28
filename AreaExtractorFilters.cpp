@@ -6,7 +6,7 @@ namespace osmtools {
 namespace detail {
 namespace AreaExtractor {
 
-generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(ExtractionTypes extractionTypes, bool needsName) {
+generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(ExtractionTypes extractionTypes) {
 	generics::RCPtr<osmpbf::AbstractTagFilter> mainFilter;
 	generics::RCPtr<osmpbf::OrTagFilter> areaFilter(new osmpbf::OrTagFilter());
 
@@ -61,12 +61,7 @@ generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(Extracti
 		}
 	}
 	
-	if (needsName) {
-		mainFilter.reset(osmpbf::newAnd(new osmpbf::KeyOnlyTagFilter("name"), osmpbf::newOr(wayFilter.get(), relationFilter.get())) );
-	}
-	else {
-		mainFilter.reset( osmpbf::newOr(wayFilter.get(), relationFilter.get()) );
-	}
+	mainFilter.reset( osmpbf::newOr(wayFilter.get(), relationFilter.get()) );
 	return mainFilter;
 }
 

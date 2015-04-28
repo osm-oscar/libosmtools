@@ -85,6 +85,7 @@ private:
 		osmpbf::OSMFileIn inFile;
 		ExtractionTypes extractionTypes;
 		bool needsName;
+		generics::RCPtr<osmpbf::AbstractTagFilter> externalFilter;
 		sserialize::ProgressInfo pinfo;
 		
 		std::atomic<uint32_t> relevantWaysSize;
@@ -154,21 +155,22 @@ public:
 	AreaExtractor() {}
 	virtual ~AreaExtractor() {}
 	///@param processor (const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive), MUST be thread-safe
-	///@param numThreads numver of threads, 0 for auto-detecting
+	///@param filter additional AND-filter 
+	///@param numThreads number of threads, 0 for auto-detecting
 	template<typename TProcessor>
-	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_BUT_BUILDINGS, bool needsName = true, uint32_t numThreads = 0);
+	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0);
 };
 
 template<typename TProcessor>
-bool AreaExtractor::extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes, bool needsName, uint32_t numThreads) {
+bool AreaExtractor::extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter, uint32_t numThreads) {
 	if (! (extractionTypes & ET_ALL)) {
 		return false;
 	}
 	
 	Context ctx(inputFileName);
 	ctx.extractionTypes = extractionTypes;
-	ctx.needsName = needsName;
-
+	ctx.externalFilter = filter;
+	
 	osmpbf::PrimitiveBlockInputAdaptor pbi;
 
 	if (!ctx.inFile.open()) {
@@ -220,7 +222,7 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 		osmpbf::parseFileCPPThreads(ctx.inFile, rwe, numThreads, 1, true);
 		ctx.pinfo.end();
 
-		std::cout << "AreaExtractor: Found " << ctx.relevantRelationsSize << " relations with" << ctx.rawWays.size() << " ways \n";
+		std::cout << "AreaExtractor: Found " << ctx.relevantRelationsSize << " relations with " << ctx.rawWays.size() << " ways \n";
 		
 		ctx.pinfo.begin(ctx.inFile.dataSize(), "AreaExtractor: Relation-ways' node-refs");
 		ctx.inFile.reset();
