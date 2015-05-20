@@ -20,7 +20,7 @@ generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(Extracti
 	wayFilter->addChild(new osmpbf::PrimitiveTypeFilter(osmpbf::WayPrimitive));
 	relationFilter->addChild(new osmpbf::PrimitiveTypeFilter(osmpbf::RelationPrimitive));
 	
-	if (extractionTypes & ET_BUILDING) {
+	if ((extractionTypes & ET_BUILDING) == ET_BUILDING) {
 		areaFilter->addChild(new osmpbf::KeyOnlyTagFilter("building"));
 	}
 	if (extractionTypes & ET_BOUNDARIES) {
@@ -65,7 +65,7 @@ generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(Extracti
 	
 	{//set the relation filter
 		osmpbf::AbstractTagFilter * multiPolyFilter;
-		if (extractionTypes & ET_ALL_MULTIPOLYGONS) {
+		if (extractionTypes & ET_MULTIPOLYGONS) {
 			multiPolyFilter = new osmpbf::MultiStringTagFilter("type", {"multipoly", "multipolygon"});
 		}
 		else {
