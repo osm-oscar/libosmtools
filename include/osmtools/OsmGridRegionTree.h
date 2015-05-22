@@ -145,6 +145,10 @@ public:
 			delete *it;
 		}
 	}
+	const sserialize::spatial::GridRegionTree & grt() const { return m_grt; }
+	void clearGRT() {
+		m_grt = sserialize::spatial::GridRegionTree();
+	}
 	///You should only call this prior to calling addPolygonsToRaster
 	///polygon ids are invalid afterwards
 	template<typename T_COMPARE>
@@ -203,6 +207,7 @@ public:
 	}
 	
 	///This is thread safe if you do not after calling addPolygonsToRaster()
+	///Inserts all hit regions into dest
 	template<typename T_SET_TYPE = std::set<uint32_t> >
 	void test(const Point & p, T_SET_TYPE & dest) const {
 		std::insert_iterator<T_SET_TYPE> inserter(dest, dest.end());
