@@ -206,6 +206,11 @@ public:
 		m_grt.shrink_to_fit();
 	}
 	
+	template<typename T_OUTPUT_ITERATOR1, typename T_OUTPUT_ITERATOR2>
+	void test(const Point & p, T_OUTPUT_ITERATOR1 definiteEnclosing, T_OUTPUT_ITERATOR2 candidateEnclosing) const {
+		m_grt.find(p, definiteEnclosing, candidateEnclosing);
+	}
+	
 	///This is thread safe if you do not after calling addPolygonsToRaster()
 	///Inserts all hit regions into dest
 	template<typename T_SET_TYPE = std::set<uint32_t> >
