@@ -188,7 +188,7 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 	
 	NodeGatherer ng(&ctx);
 	
-	{
+	if (extractionTypes & ET_PRIMITIVE_WAYS) {
 		WayRefsExtractor wre(&ctx);
 		WayExtractor we(&ctx, &cb);
 
@@ -212,7 +212,7 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 	}
 	
 	ctx.nodes.clear();
-	{
+	if (extractionTypes & ET_PRIMITIVE_RELATIONS) {
 		RelationWaysExtractor rwe(&ctx);
 		RelationWayNodeRefsExtractor rwnr(&ctx);
 		RelationExtractor re(&ctx, &cb);
