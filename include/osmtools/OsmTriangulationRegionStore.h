@@ -15,6 +15,8 @@
 #include <CGAL/Constrained_triangulation_plus_2.h>
 
 #include <assert.h>
+#include <thread>
+#include <mutex>
 
 namespace osmtools {
 
@@ -27,10 +29,10 @@ namespace osmtools {
 class OsmTriangulationRegionStore {
 public:
 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
+	typedef CGAL::Exact_intersections_tag Itag;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
 	typedef CGAL::Constrained_triangulation_face_base_2<K> Fb;
 	typedef CGAL::Triangulation_data_structure_2<Vb,Fb> TDS;
-	typedef CGAL::Exact_intersections_tag Itag;
 	typedef CGAL::Constrained_Delaunay_triangulation_2<K,TDS,Itag> CDT;
 	typedef CGAL::Constrained_triangulation_plus_2<CDT> CDTP;
 	typedef CDT Triangulation;
@@ -131,45 +133,72 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
 
 	std::cout << "Setting initial cellids" << std::flush;
 	{
-		std::unordered_map<MyCFLArray, uint32_t> cellListToCellId;
-		std::vector<Face_handle> tmpFaceStore;
-		tmpFaceStore.reserve( m_grid.tds().number_of_faces() );
-		for(auto it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
-			tmpFaceStore.push_back(it);
-		}
-		uint32_t tmpFaceStoreSize = tmpFaceStore.size();
-		#pragma omp parallel for schedule(dynamic, 1)
-		for(uint32_t i=0; i < tmpFaceStoreSize; ++i) {
+		struct Context {
+			std::unordered_map<MyCFLArray, uint32_t> cellListToCellId;
+			OsmGridRegionTree<TDummy> * grt;
+			RegionListContainer * p_cellLists;
+			FaceCellIdMap * p_faceToCellId;
+			Triangulation::Finite_faces_iterator facesIt;
+			Triangulation::Finite_faces_iterator facesEnd;
+			std::mutex lock;
+		} ctx;
+		ctx.grt = &grt;
+		ctx.p_cellLists = &m_cellLists;
+		ctx.p_faceToCellId = &m_faceToCellId;
+		ctx.facesIt = m_grid.tds().finite_faces_begin();
+		ctx.facesEnd = m_grid.tds().finite_faces_end();
+		
+		struct WorkFunc {
+			Context * ctx;
 			std::unordered_set<uint32_t> tmpCellList;
-			Face_handle fh = tmpFaceStore[i];
 			Point centroid;
-			#pragma omp critical
-			{
-				centroid = CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
-			}
-			double x = CGAL::to_double(centroid.x());
-			double y = CGAL::to_double(centroid.y());
-			grt.test(x, y, tmpCellList);
-			MyCFLArray tmp(tmpCellList.begin(), tmpCellList.end());
-			std::sort(tmp.begin(), tmp.end());
-			uint32_t faceCellId = 0;
-			#pragma omp critical
-			{
-				if (!cellListToCellId.count(tmp)) {
-					faceCellId = cellListToCellId.size();
-					sserialize::MMVector<uint32_t>::size_type off = m_cellLists.size();
-					m_cellLists.push_back(tmp.begin(), tmp.end());
-					tmp = MyCFLArray(&m_cellLists, off, tmp.size());
-					cellListToCellId[tmp] = faceCellId;
+			Face_handle fh;
+			WorkFunc(Context * ctx) : ctx(ctx) {}
+			WorkFunc(const WorkFunc & other) : ctx(other.ctx) {}
+			void operator()() {
+				while (true) {
+					std::unique_lock<std::mutex> lck(ctx->lock);
+					if (ctx->facesIt != ctx->facesEnd) {
+						fh = ctx->facesIt;
+						++(ctx->facesIt);
+						centroid = CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
+					}
+					else {
+						return;
+					}
+					lck.unlock();
+					double x = CGAL::to_double(centroid.x());
+					double y = CGAL::to_double(centroid.y());
+					tmpCellList.clear();
+					ctx->grt->test(x, y, tmpCellList);
+					MyCFLArray tmp(tmpCellList.begin(), tmpCellList.end());
+					std::sort(tmp.begin(), tmp.end());
+					uint32_t faceCellId = 0;
+					lck.lock();
+					if (!ctx->cellListToCellId.count(tmp)) {
+						faceCellId = ctx->cellListToCellId.size();
+						sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
+						ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
+						tmp = MyCFLArray(ctx->p_cellLists, off, tmp.size());
+						ctx->cellListToCellId[tmp] = faceCellId;
+					}
+					else {
+						faceCellId = ctx->cellListToCellId.at(tmp);
+					}
+					(*(ctx->p_faceToCellId))[fh] = faceCellId;
 				}
-				else {
-					faceCellId = cellListToCellId.at(tmp);
-				}
-				m_faceToCellId[fh] = faceCellId;
 			}
+		};
+		std::vector<std::thread> threads;
+		for(uint32_t i(0), s(std::thread::hardware_concurrency()); i < s; ++i) {
+			threads.push_back(std::thread(WorkFunc(&ctx)));
 		}
-		m_cellIdToCellList.resize(cellListToCellId.size());
-		for(const auto & x : cellListToCellId) {
+		for(std::thread & x : threads) {
+			x.join();
+		}
+
+		m_cellIdToCellList.resize(ctx.cellListToCellId.size());
+		for(const auto & x : ctx.cellListToCellId) {
 			m_cellIdToCellList.at(x.second) = x.first;
 		}
 	}
