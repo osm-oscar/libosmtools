@@ -74,67 +74,68 @@ public:
 
 template<typename TDummy>
 void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
-	//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
-	//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
-	typedef std::pair<double, double> RawGeoPoint;
-	typedef typename OsmGridRegionTree<TDummy>::GeoPolygon GeoPolygon;
-	typedef typename OsmGridRegionTree<TDummy>::GeoMultiPolygon GeoMultiPolygon;
-	std::unordered_map<RawGeoPoint, uint32_t> gpToId;
-	std::vector<Point> pts;
-	std::unordered_set< std::pair<uint32_t, uint32_t> > segments;
-	
-	
-	auto handleSinglePolygon = [&gpToId,&pts, &segments](const GeoPolygon * gp) {
-		typename GeoPolygon::const_iterator it(gp->cbegin()), prev(gp->cbegin()), end(gp->cend());
-		for(++it; it != end; ++it, ++prev) {
-			RawGeoPoint itGp = *it;
-			RawGeoPoint prevGp = *prev;
-			if (!gpToId.count(itGp)) {
-				gpToId[itGp] = pts.size();
-				pts.push_back(Point(itGp.first, itGp.second));
+	{
+		//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
+		//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
+		typedef std::pair<double, double> RawGeoPoint;
+		typedef typename OsmGridRegionTree<TDummy>::GeoPolygon GeoPolygon;
+		typedef typename OsmGridRegionTree<TDummy>::GeoMultiPolygon GeoMultiPolygon;
+		std::unordered_map<RawGeoPoint, uint32_t> gpToId;
+		std::vector<Point> pts;
+		std::unordered_set< std::pair<uint32_t, uint32_t> > segments;
+		
+		
+		auto handleSinglePolygon = [&gpToId,&pts, &segments](const GeoPolygon * gp) {
+			typename GeoPolygon::const_iterator it(gp->cbegin()), prev(gp->cbegin()), end(gp->cend());
+			for(++it; it != end; ++it, ++prev) {
+				RawGeoPoint itGp = *it;
+				RawGeoPoint prevGp = *prev;
+				if (!gpToId.count(itGp)) {
+					gpToId[itGp] = pts.size();
+					pts.push_back(Point(itGp.first, itGp.second));
+				}
+				if (!gpToId.count(prevGp)) {
+					gpToId[prevGp] = pts.size();
+					pts.push_back(Point(prevGp.first, prevGp.second));
+				}
+				segments.insert( std::pair<uint32_t, uint32_t>(gpToId.at(itGp), gpToId.at(prevGp)) );
 			}
-			if (!gpToId.count(prevGp)) {
-				gpToId[prevGp] = pts.size();
-				pts.push_back(Point(prevGp.first, prevGp.second));
+		};
+		std::cout << "OsmTriangulationRegionStore: extracting segments..." << std::flush;
+		for(sserialize::spatial::GeoRegion* r : grt.regions()) {
+			if (r->type() == sserialize::spatial::GS_POLYGON) {
+				const GeoPolygon * gp = static_cast<const GeoPolygon*>(r);
+				handleSinglePolygon(gp);
 			}
-			segments.insert( std::pair<uint32_t, uint32_t>(gpToId.at(itGp), gpToId.at(prevGp)) );
+			else if (r->type() == sserialize::spatial::GS_MULTI_POLYGON) {
+				const GeoMultiPolygon * gmp = static_cast<const GeoMultiPolygon*>(r);
+				for(const GeoPolygon & gp : gmp->outerPolygons()) {
+					handleSinglePolygon(&gp);
+				}
+				for(const GeoPolygon & gp : gmp->innerPolygons()) {
+					handleSinglePolygon(&gp);
+				}
+			}
 		}
-	};
-	std::cout << "OsmTriangulationRegionStore: extracting segments..." << std::flush;
-	for(sserialize::spatial::GeoRegion* r : grt.regions()) {
-		if (r->type() == sserialize::spatial::GS_POLYGON) {
-			const GeoPolygon * gp = static_cast<const GeoPolygon*>(r);
-			handleSinglePolygon(gp);
+		std::cout << "done" << std::endl;
+		for(const std::pair<uint32_t, uint32_t> & s : segments) {
+			assert(s.first < pts.size());
+			assert(s.second < pts.size());
 		}
-		else if (r->type() == sserialize::spatial::GS_MULTI_POLYGON) {
-			const GeoMultiPolygon * gmp = static_cast<const GeoMultiPolygon*>(r);
-			for(const GeoPolygon & gp : gmp->outerPolygons()) {
-				handleSinglePolygon(&gp);
-			}
-			for(const GeoPolygon & gp : gmp->innerPolygons()) {
-				handleSinglePolygon(&gp);
-			}
-		}
+		std::cout << "OsmTriangulationRegionStore: creating triangulation..." << std::flush;
+		m_grid.tds().insert_constraints(pts.cbegin(), pts.cend(), segments.cbegin(), segments.cend());
+		std::cout << "done" << std::endl;
 	}
-	std::cout << "done" << std::endl;
-	for(const std::pair<uint32_t, uint32_t> & s : segments) {
-		assert(s.first < pts.size());
-		assert(s.second < pts.size());
-	}
-	std::cout << "OsmTriangulationRegionStore: creating triangulation..." << std::flush;
-	m_grid.tds().insert_constraints(pts.cbegin(), pts.cend(), segments.cbegin(), segments.cend());
-	std::cout << "done" << std::endl;
+	
 	
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
 	//faces that are connected and have the same region-list get the same cellid
-	typedef sserialize::CFLArray< sserialize::MMVector<uint32_t> > MyCFLArray;
-	
 
 	std::cout << "Setting initial cellids" << std::flush;
 	{
 		struct Context {
-			std::unordered_map<MyCFLArray, uint32_t> cellListToCellId;
+			std::unordered_map<RegionList, uint32_t> cellListToCellId;
 			OsmGridRegionTree<TDummy> * grt;
 			RegionListContainer * p_cellLists;
 			FaceCellIdMap * p_faceToCellId;
@@ -171,7 +172,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
 					double y = CGAL::to_double(centroid.y());
 					tmpCellList.clear();
 					ctx->grt->test(x, y, tmpCellList);
-					MyCFLArray tmp(tmpCellList.begin(), tmpCellList.end());
+					RegionList tmp(tmpCellList.begin(), tmpCellList.end());
 					std::sort(tmp.begin(), tmp.end());
 					uint32_t faceCellId = 0;
 					lck.lock();
@@ -179,7 +180,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
 						faceCellId = ctx->cellListToCellId.size();
 						sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
 						ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
-						tmp = MyCFLArray(ctx->p_cellLists, off, tmp.size());
+						tmp = RegionList(ctx->p_cellLists, off, tmp.size());
 						ctx->cellListToCellId[tmp] = faceCellId;
 					}
 					else {
