@@ -33,7 +33,7 @@ private:
 			return new osmtools::OsmGeoPolygon(osmtools::OsmGeoPolygon::PointsContainer(&pointsDest, pointsBegin, pointsSize));
 		}
 	};
-		
+
 	template<typename T_GMP_TYPE>
 	struct ConvertGMP {
 		static sserialize::spatial::GeoRegion* conv(PointDataContainer & pointsDest, PolygonsContainer & polygonsDest, const sserialize::spatial::GeoRegion * r) {

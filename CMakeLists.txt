@@ -1,5 +1,5 @@
 set(LIBOSMTOOLS_SOURCES_CPP
-	${CMAKE_CURRENT_SOURCE_DIR}/AreaExtractor.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/AreaExtractorFilters.cpp 
-	${CMAKE_CURRENT_SOURCE_DIR}/types.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/AreaExtractor.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/AreaExtractorFilters.cpp 
+	${CMAKE_CURRENT_SOURCE_DIR}/src/types.cpp
 	PARENT_SCOPE)
