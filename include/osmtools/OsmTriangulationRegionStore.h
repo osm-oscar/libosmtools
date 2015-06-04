@@ -37,6 +37,8 @@ public:
 	typedef Triangulation::Point Point;
 	typedef osmtools::GridLocator<Triangulation> GridLocator;
 	typedef GridLocator::Face_handle Face_handle;
+	typedef sserialize::MMVector<uint32_t> RegionListContainer;
+	typedef sserialize::CFLArray<RegionListContainer> RegionList;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -55,12 +57,16 @@ private:
 private:
 	GridLocator m_grid;
 	FaceCellIdMap m_faceToCellId;
+	RegionListContainer m_cellLists;
+	std::vector<RegionList> m_cellIdToCellList;
+	std::vector<uint32_t> m_refinedCellIdToUnrefined;
 public:
 	OsmTriangulationRegionStore() {}
 	~OsmTriangulationRegionStore() {}
 	template<typename TDummy>
 	void init(OsmGridRegionTree<TDummy> & grt);
 	inline uint32_t cellId(double lat, double lon) const;
+	inline const RegionList & regions(uint32_t cellId);
 };
 
 
@@ -120,38 +126,56 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
 	//faces that are connected and have the same region-list get the same cellid
-	sserialize::MMVector<uint32_t> cellLists;
 	typedef sserialize::CFLArray< sserialize::MMVector<uint32_t> > MyCFLArray;
-	std::unordered_map<MyCFLArray, uint32_t> cellListToCellId;
+	
 
 	std::cout << "Setting initial cellids" << std::flush;
 	{
-		std::unordered_set<uint32_t> tmpCellList;
-		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
-			Face_handle fh = it;
-			auto centroid = CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
+		std::unordered_map<MyCFLArray, uint32_t> cellListToCellId;
+		std::vector<Face_handle> tmpFaceStore;
+		tmpFaceStore.reserve( m_grid.tds().number_of_faces() );
+		for(auto it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
+			tmpFaceStore.push_back(it);
+		}
+		uint32_t tmpFaceStoreSize = tmpFaceStore.size();
+		#pragma omp parallel for schedule(dynamic, 1)
+		for(uint32_t i=0; i < tmpFaceStoreSize; ++i) {
+			std::unordered_set<uint32_t> tmpCellList;
+			Face_handle fh = tmpFaceStore[i];
+			Point centroid;
+			#pragma omp critical
+			{
+				centroid = CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
+			}
 			double x = CGAL::to_double(centroid.x());
 			double y = CGAL::to_double(centroid.y());
 			grt.test(x, y, tmpCellList);
 			MyCFLArray tmp(tmpCellList.begin(), tmpCellList.end());
 			std::sort(tmp.begin(), tmp.end());
 			uint32_t faceCellId = 0;
-			if (!cellListToCellId.count(tmp)) {
-				faceCellId = cellListToCellId.size();
-				sserialize::MMVector<uint32_t>::size_type off = cellLists.size();
-				cellLists.push_back(tmp.begin(), tmp.end());
-				tmp = MyCFLArray(&cellLists, off, tmp.size());
-				cellListToCellId[tmp] = faceCellId;
+			#pragma omp critical
+			{
+				if (!cellListToCellId.count(tmp)) {
+					faceCellId = cellListToCellId.size();
+					sserialize::MMVector<uint32_t>::size_type off = m_cellLists.size();
+					m_cellLists.push_back(tmp.begin(), tmp.end());
+					tmp = MyCFLArray(&m_cellLists, off, tmp.size());
+					cellListToCellId[tmp] = faceCellId;
+				}
+				else {
+					faceCellId = cellListToCellId.at(tmp);
+				}
+				m_faceToCellId[fh] = faceCellId;
 			}
-			else {
-				faceCellId = cellListToCellId.at(tmp);
-			}
-			m_faceToCellId[fh] = faceCellId;
-			tmpCellList.clear();
+		}
+		m_cellIdToCellList.resize(cellListToCellId.size());
+		for(const auto & x : cellListToCellId) {
+			m_cellIdToCellList.at(x.second) = x.first;
 		}
 	}
 	std::cout << "done" << std::endl;
-	std::cout << "Found " << cellListToCellId.size() << " unrefined cells" << std::endl;
+	
+	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
 	//now every cell has an id but cells that are not connected may not have different cells
 	//we now have to check for each id if the correspondig faces are all connected through cells with the same id
 	//this essential is a graph traversel to get all connected components where each face is a node and there's an edge between nodes
@@ -162,11 +186,12 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
 		std::vector<Face_handle> stack;
 		uint32_t cellId = 0;
 		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
-			Face_handle fh = it;
-			if (tmp.is_defined(fh)) {
+			Face_handle rfh = it;
+			if (tmp.is_defined(rfh)) {
 				continue;
 			}
-			stack.push_back(fh);
+			//a new connected component is going to be created
+			stack.push_back(rfh);
 			while(stack.size()) {
 				Face_handle fh = stack.back();
 				stack.pop_back();
@@ -185,8 +210,10 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
 			}
 			
 			stack.clear();
+			m_refinedCellIdToUnrefined.push_back(m_faceToCellId[rfh]);
 			++cellId;
 		}
+		assert(cellId == m_refinedCellIdToUnrefined.size());
 		m_faceToCellId = std::move(tmp);
 		std::cout << "done" << std::endl;
 		std::cout << "Found " << cellId << " cells" << std::endl;
@@ -205,6 +232,9 @@ uint32_t OsmTriangulationRegionStore::cellId(double lat, double lon) const {
 	}
 }
 
+const OsmTriangulationRegionStore::RegionList& OsmTriangulationRegionStore::regions(uint32_t cellId) {
+	return m_cellIdToCellList.at(m_refinedCellIdToUnrefined.at(cellId) );
+}
 
 }//end namespace
 
