@@ -1,4 +1,5 @@
 #ifndef LIBOSMTOOLS_OSM_TRIANGULATION_REGION_STORE_H
+#define LIBOSMTOOLS_OSM_TRIANGULATION_REGION_STORE_H
 #include <unordered_map>
 
 #include <sserialize/utility/hashspecializations.h>
@@ -65,9 +66,13 @@ private:
 public:
 	OsmTriangulationRegionStore() {}
 	~OsmTriangulationRegionStore() {}
+	uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
 	template<typename TDummy>
 	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount);
 	inline uint32_t cellId(double lat, double lon) const;
+	inline uint32_t cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
+	inline const RegionListContainer & regionLists() const { return m_cellLists; }
+	inline RegionListContainer & regionLists() { return m_cellLists; }
 	inline const RegionList & regions(uint32_t cellId);
 };
 
