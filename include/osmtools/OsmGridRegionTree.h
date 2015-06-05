@@ -104,6 +104,7 @@ private:
 	uint32_t m_lonRefineCount;
 	double m_refineMinDiag;
 private:
+	///@thread-safety no
 	void push_back(const sserialize::spatial::GeoRegion * p) {
 		sserialize::spatial::GeoRegion * r = 0;
 		switch (p->type()) {
@@ -148,6 +149,13 @@ public:
 	const sserialize::spatial::GridRegionTree & grt() const { return m_grt; }
 	void clearGRT() {
 		m_grt = sserialize::spatial::GridRegionTree();
+	}
+	void clear() {
+		clearGRT();
+		m_polygonPoints = PointDataContainer();
+		m_polygonsContainer = PolygonsContainer();
+		m_regions = RegionsContainer();
+		m_values = ValuesContainer();
 	}
 	///You should only call this prior to calling addPolygonsToRaster
 	///polygon ids are invalid afterwards
