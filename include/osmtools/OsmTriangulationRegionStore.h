@@ -66,14 +66,14 @@ public:
 	OsmTriangulationRegionStore() {}
 	~OsmTriangulationRegionStore() {}
 	template<typename TDummy>
-	void init(OsmGridRegionTree<TDummy> & grt);
+	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount);
 	inline uint32_t cellId(double lat, double lon) const;
 	inline const RegionList & regions(uint32_t cellId);
 };
 
 
 template<typename TDummy>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount) {
 	{
 		//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
 		//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
@@ -248,6 +248,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt) {
 		std::cout << "done" << std::endl;
 		std::cout << "Found " << cellId << " cells" << std::endl;
 	}
+	m_grid.initGrid(gridLatCount, gridLonCount);
 }
 
 
