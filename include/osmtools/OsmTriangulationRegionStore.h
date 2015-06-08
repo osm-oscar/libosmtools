@@ -68,6 +68,7 @@ public:
 	OsmTriangulationRegionStore() {}
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
 	~OsmTriangulationRegionStore() {}
+	void clear();
 	uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
 	template<typename TDummy>
 	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount);
