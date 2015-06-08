@@ -156,6 +156,11 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		ctx.facesIt = m_grid.tds().finite_faces_begin();
 		ctx.facesEnd = m_grid.tds().finite_faces_end();
 		
+		//set the infinite_face to cellId=0
+		m_faceToCellId[m_grid.tds().infinite_face()] = 0;
+		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
+		
+		
 		struct WorkFunc {
 			Context * ctx;
 			std::unordered_set<uint32_t> tmpCellList;
@@ -221,7 +226,8 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	{
 		FaceCellIdMap tmp;
 		std::vector<Face_handle> stack;
-		uint32_t cellId = 0;
+		uint32_t cellId = 1; //the infinite_face has cellId=0
+		m_refinedCellIdToUnrefined.push_back(0);
 		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
 			Face_handle rfh = it;
 			if (tmp.is_defined(rfh)) {
@@ -266,7 +272,7 @@ uint32_t OsmTriangulationRegionStore::cellId(double lat, double lon) {
 		return m_faceToCellId[fh];
 	}
 	else {
-		return 0xFFFFFFFF;
+		return 0;
 	}
 }
 
