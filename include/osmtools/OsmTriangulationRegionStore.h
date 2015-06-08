@@ -42,6 +42,7 @@ public:
 	typedef GridLocator::Face_handle Face_handle;
 	typedef sserialize::MMVector<uint32_t> RegionListContainer;
 	typedef sserialize::CFLArray<RegionListContainer> RegionList;
+	typedef GridLocator::TriangulationDataStructure::Finite_faces_iterator Finite_faces_iterator;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -71,17 +72,25 @@ public:
 	void clear();
 	uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
 	template<typename TDummy>
-	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount);
+	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t threadCount = 0);
 	inline uint32_t cellId(double lat, double lon);
 	inline uint32_t cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
+	///@thread-safety no
+	uint32_t cellId(const Face_handle & fh);
 	inline const RegionListContainer & regionLists() const { return m_cellLists; }
 	inline RegionListContainer & regionLists() { return m_cellLists; }
 	inline const RegionList & regions(uint32_t cellId);
+	Finite_faces_iterator finite_faces_begin() { return m_grid.tds().finite_faces_begin(); }
+	Finite_faces_iterator finite_faces_end() { return m_grid.tds().finite_faces_end(); }
 };
 
 
 template<typename TDummy>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount) {
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t threadCount) {
+	if (!threadCount) {
+		threadCount = std::thread::hardware_concurrency();
+	}
+
 	{
 		//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
 		//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
@@ -199,12 +208,13 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					else {
 						faceCellId = ctx->cellListToCellId.at(tmp);
 					}
+					assert((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
 					(*(ctx->p_faceToCellId))[fh] = faceCellId;
 				}
 			}
 		};
 		std::vector<std::thread> threads;
-		for(uint32_t i(0), s(std::thread::hardware_concurrency()); i < s; ++i) {
+		for(uint32_t i(0); i < threadCount; ++i) {
 			threads.push_back(std::thread(WorkFunc(&ctx)));
 		}
 		for(std::thread & x : threads) {
