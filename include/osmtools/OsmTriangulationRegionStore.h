@@ -63,13 +63,15 @@ private:
 	RegionListContainer m_cellLists;
 	std::vector<RegionList> m_cellIdToCellList;
 	std::vector<uint32_t> m_refinedCellIdToUnrefined;
+	std::mutex m_lock;
 public:
 	OsmTriangulationRegionStore() {}
+	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
 	~OsmTriangulationRegionStore() {}
 	uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
 	template<typename TDummy>
 	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount);
-	inline uint32_t cellId(double lat, double lon) const;
+	inline uint32_t cellId(double lat, double lon);
 	inline uint32_t cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
 	inline const RegionListContainer & regionLists() const { return m_cellLists; }
 	inline RegionListContainer & regionLists() { return m_cellLists; }
@@ -256,9 +258,9 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	m_grid.initGrid(gridLatCount, gridLonCount);
 }
 
-
-///By definition: items that are not in any cell are in cell 0xFFFFFFFF
-uint32_t OsmTriangulationRegionStore::cellId(double lat, double lon) const {
+///By definition: items that are not in any cell are in cell 0
+uint32_t OsmTriangulationRegionStore::cellId(double lat, double lon) {
+	std::unique_lock<std::mutex> lck(m_lock);
 	Face_handle fh = m_grid.locate(lat, lon);
 	if (fh->is_valid() && m_faceToCellId.is_defined(fh)) {
 		return m_faceToCellId[fh];
