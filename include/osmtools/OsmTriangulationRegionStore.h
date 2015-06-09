@@ -149,13 +149,14 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	//a face lives in multiple regions, so every face has a unique list of region ids
 	//faces that are connected and have the same region-list get the same cellid
 
-	std::cout << "Setting initial cellids" << std::flush;
 	{
 		struct Context {
 			std::unordered_map<RegionList, uint32_t> cellListToCellId;
 			OsmGridRegionTree<TDummy> * grt;
 			RegionListContainer * p_cellLists;
 			FaceCellIdMap * p_faceToCellId;
+			sserialize::ProgressInfo pinfo;
+			uint32_t finishedFaces;
 			Triangulation::Finite_faces_iterator facesIt;
 			Triangulation::Finite_faces_iterator facesEnd;
 			std::mutex lock;
@@ -163,6 +164,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		ctx.grt = &grt;
 		ctx.p_cellLists = &m_cellLists;
 		ctx.p_faceToCellId = &m_faceToCellId;
+		ctx.finishedFaces = 0;
 		ctx.facesIt = m_grid.tds().finite_faces_begin();
 		ctx.facesEnd = m_grid.tds().finite_faces_end();
 		
@@ -210,9 +212,12 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					}
 					assert((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
 					(*(ctx->p_faceToCellId))[fh] = faceCellId;
+					ctx->finishedFaces += 1;
+					ctx->pinfo(ctx->finishedFaces);
 				}
 			}
 		};
+		ctx.pinfo.begin(m_grid.tds().number_of_faces(), "Setting initial cellids");
 		std::vector<std::thread> threads;
 		for(uint32_t i(0); i < threadCount; ++i) {
 			threads.push_back(std::thread(WorkFunc(&ctx)));
@@ -220,20 +225,20 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		for(std::thread & x : threads) {
 			x.join();
 		}
+		ctx.pinfo.end();
 
 		m_cellIdToCellList.resize(ctx.cellListToCellId.size());
 		for(const auto & x : ctx.cellListToCellId) {
 			m_cellIdToCellList.at(x.second) = x.first;
 		}
 	}
-	std::cout << "done" << std::endl;
 	
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
 	//now every cell has an id but cells that are not connected may not have different cells
 	//we now have to check for each id if the correspondig faces are all connected through cells with the same id
 	//this essential is a graph traversel to get all connected components where each face is a node and there's an edge between nodes
 	//if their correspondig faces are neighbours and share the same id
-	std::cout << "Refining cells" << std::flush;
+	std::cout << "Refining cells..." << std::flush;
 	{
 		FaceCellIdMap tmp;
 		std::vector<Face_handle> stack;
