@@ -21,7 +21,8 @@ public:
 	void initGrid(uint32_t latCount, uint32_t lonCount);
 	TDs & tds() { return m_tds; }
 	const TDs & tds() const { return m_tds; }
-	Face_handle locate(double lat, double lon) const;
+	///@thread-safety NO
+	Face_handle locate(double x, double y) const;
 };
 
 
