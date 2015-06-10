@@ -59,6 +59,10 @@ private:
 // 	typedef std::unordered_map<Face_handle, uint32_t, FaceHandleHash> FaceCellIdMap;
 	typedef CGAL::Unique_hash_map<Face_handle, uint32_t> FaceCellIdMap;
 private:
+	static Point centroid(const Face_handle & fh);
+	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
+	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
+private:
 	GridLocator m_grid;
 	FaceCellIdMap m_faceToCellId;
 	RegionListContainer m_cellLists;
@@ -71,8 +75,10 @@ public:
 	~OsmTriangulationRegionStore() {}
 	void clear();
 	uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
+	///@param cellSizeTh threshold over which a cell is split into smaller cells, pass std::numeric_limits<uint32_t>::max() to disable
+	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
 	template<typename TDummy>
-	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t threadCount = 0);
+	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t cellSizeTh, uint32_t threadCount);
 	inline uint32_t cellId(double lat, double lon);
 	inline uint32_t cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
 	///@thread-safety no
@@ -82,11 +88,12 @@ public:
 	inline const RegionList & regions(uint32_t cellId);
 	Finite_faces_iterator finite_faces_begin() { return m_grid.tds().finite_faces_begin(); }
 	Finite_faces_iterator finite_faces_end() { return m_grid.tds().finite_faces_end(); }
+	void printStats(std::ostream & out);
 };
 
 
 template<typename TDummy>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t threadCount) {
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t cellSizeTh, uint32_t threadCount) {
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
@@ -170,8 +177,8 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		
 		//set the infinite_face to cellId=0
 		m_faceToCellId[m_grid.tds().infinite_face()] = 0;
-		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
-		
+		//cells that are not in any region get cellid 1
+		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 1;
 		
 		struct WorkFunc {
 			Context * ctx;
@@ -186,7 +193,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					if (ctx->facesIt != ctx->facesEnd) {
 						fh = ctx->facesIt;
 						++(ctx->facesIt);
-						centroid = CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
+						centroid = OsmTriangulationRegionStore::centroid(fh);
 					}
 					else {
 						return;
@@ -227,10 +234,12 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		}
 		ctx.pinfo.end();
 
-		m_cellIdToCellList.resize(ctx.cellListToCellId.size());
+		m_cellIdToCellList.resize(ctx.cellListToCellId.size()+1);
 		for(const auto & x : ctx.cellListToCellId) {
 			m_cellIdToCellList.at(x.second) = x.first;
 		}
+		//set the region info of the infinite_face
+		m_cellIdToCellList.at(0) = m_cellIdToCellList.at(1);
 	}
 	
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
@@ -277,6 +286,118 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		std::cout << "done" << std::endl;
 		std::cout << "Found " << cellId << " cells" << std::endl;
 	}
+	//check if there are any cells that are too large
+	if (cellSizeTh < std::numeric_limits<uint32_t>::max()) {
+		std::cout << "Splitting cells larger than " << cellSizeTh << " triangles" << std::endl;
+		std::vector<uint32_t> cellSizes(m_refinedCellIdToUnrefined.size(), 0);
+		std::vector<Face_handle> cellRep(m_refinedCellIdToUnrefined.size());
+		std::vector<Face_handle> stack;
+		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
+			uint32_t faceCellId = m_faceToCellId[it];
+			cellSizes.at(faceCellId) += 1;
+			cellRep.at(faceCellId) = it;
+		}
+		while (true) {
+			uint32_t prevCellIdCount = cellRep.size();
+			//skipt cellId=0 since that is the infinite_face
+			for(uint32_t cellId(1); cellId < cellRep.size(); ++cellId) {
+				if (cellSizes.at(cellId) < cellSizeTh) {
+					continue;
+				}
+				//now calculate the maximum hop-distance between the root-face and the other cell-faces
+				uint32_t maxHopDistance = 0;
+				Face_handle rfh = cellRep.at(cellId);
+				std::vector<Face_handle> cellTriangs;
+				CGAL::Unique_hash_map<Face_handle, uint32_t> cellTriangMap;//with hop-distance from rfh
+				
+				//get the face with maximum hop-distance, this is currently O(n^2)
+				{
+					std::vector<Face_handle> tmpCellTriangs;
+					this->hopDistances(rfh, tmpCellTriangs, cellTriangMap, maxHopDistance);
+					for(Face_handle & fh : tmpCellTriangs) {
+						uint32_t myMaxHopDistance;
+						this->hopDistances(fh, cellTriangs, cellTriangMap, myMaxHopDistance);
+						if (myMaxHopDistance > maxHopDistance) {
+							maxHopDistance = 0;
+							rfh = fh;
+						}
+					}
+				}
+				//calculate values for the correct start-cell
+				this->hopDistances(rfh, cellTriangs, cellTriangMap, maxHopDistance);
+				//now split the cell by adding all faces with a maximum distance of maxDist/2 into the current cell
+				//and all remaining faces into newly connected cells
+				//the faces in cellTriangs are already sorted according to the hop-distance
+				maxHopDistance /= 2;
+				auto faceIt (cellTriangs.begin()), end(cellTriangs.end());
+				for(; faceIt != end; ++faceIt) {
+					uint32_t & val = cellTriangMap[*faceIt];
+					if (val <= maxHopDistance) {
+						val = 0;
+					}
+					else {
+						break;
+					}
+				}
+				//update the size of the old cell
+				cellSizes.at(cellId) = faceIt-cellTriangs.begin();
+				//faceIt points to the first face with hopdistance > maxHopDistance
+				//reset the value of the map to assign new ids to the faces
+				for(auto it(faceIt); it != end; ++it) {
+					cellTriangMap[*it] = 0xFFFFFFFF;
+				}
+				//now assign new ids to all faces that are not part of the old cell anymore
+				for(; faceIt != end; ++faceIt) {
+					//face has a cellId
+					if (cellTriangMap[*faceIt] != 0xFFFFFFFF) {
+						continue;
+					}
+					//create the connected components for this cell
+					uint32_t newCellId = m_refinedCellIdToUnrefined.size();
+					uint32_t newCellSize = 0;
+					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
+					cellRep.push_back(*faceIt);
+					std::vector<Face_handle> stack;
+					stack.push_back(*faceIt);
+					while(stack.size()) {
+						Face_handle fh = stack.back();
+						stack.pop_back();
+						assert(cellTriangMap[fh] == 0xFFFFFFFF);
+						assert(m_faceToCellId.is_defined(fh));
+						cellTriangMap[fh] = newCellId;
+						m_faceToCellId[fh] = newCellId;
+						++newCellSize;
+						for(int i=0; i < 3; ++i) {
+							Face_handle nfh = fh->neighbor(i);
+							if (cellTriangMap[nfh] == 0xFFFFFFFF) {
+								stack.push_back(nfh);
+							}
+						}
+					}
+					stack.clear();
+					cellSizes.push_back(newCellSize);
+				}
+			}
+			assert(cellRep.size() == cellSizes.size());
+			assert(cellRep.size() == m_refinedCellIdToUnrefined.size());
+			//if no new cell was created then all cells are smaller than cellSizeTh
+			if (prevCellIdCount == cellRep.size()) {
+				break;
+			}
+		}
+		std::cout << "Found " << m_refinedCellIdToUnrefined.size() << " cells" << std::endl;
+	}
+	{
+		std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+		for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+			uint32_t fid = cellId(it);
+			triangCountOfCells.at(fid) += 1;
+		}
+		for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+			assert(triangCountOfCells.at(cellId) <= cellSizeTh && triangCountOfCells.at(cellId));
+		}
+	}
+	
 	m_grid.initGrid(gridLatCount, gridLonCount);
 }
 
