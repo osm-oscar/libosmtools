@@ -175,10 +175,10 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		ctx.facesIt = m_grid.tds().finite_faces_begin();
 		ctx.facesEnd = m_grid.tds().finite_faces_end();
 		
-		//set the infinite_face to cellId=0
-		m_faceToCellId[m_grid.tds().infinite_face()] = 0;
-		//cells that are not in any region get cellid 1
-		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 1;
+		//set the infinite_face to cellId=0xFFFFFFFF
+		m_faceToCellId[m_grid.tds().infinite_face()] = 0xFFFFFFFF;
+		//cells that are not in any region get cellid 0
+		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
 		
 		struct WorkFunc {
 			Context * ctx;
@@ -208,7 +208,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					uint32_t faceCellId = 0;
 					lck.lock();
 					if (!ctx->cellListToCellId.count(tmp)) {
-						faceCellId = ctx->cellListToCellId.size();
+						faceCellId = ctx->cellListToCellId.size(); //+1 account for the infinte_face
 						sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
 						ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
 						tmp = RegionList(ctx->p_cellLists, off, tmp.size());
@@ -234,12 +234,10 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		}
 		ctx.pinfo.end();
 
-		m_cellIdToCellList.resize(ctx.cellListToCellId.size()+1);
+		m_cellIdToCellList.resize(ctx.cellListToCellId.size());
 		for(const auto & x : ctx.cellListToCellId) {
 			m_cellIdToCellList.at(x.second) = x.first;
 		}
-		//set the region info of the infinite_face
-		m_cellIdToCellList.at(0) = m_cellIdToCellList.at(1);
 	}
 	
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
@@ -251,7 +249,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	{
 		FaceCellIdMap tmp;
 		std::vector<Face_handle> stack;
-		uint32_t cellId = 1; //the infinite_face has cellId=0
+		uint32_t cellId = 1; //faces that are not in any region are in cellid 0, no need to refine them
 		m_refinedCellIdToUnrefined.push_back(0);
 		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
 			Face_handle rfh = it;
@@ -306,7 +304,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				}
 				//now calculate the maximum hop-distance between the root-face and the other cell-faces
 				uint32_t maxHopDistance = 0;
-				Face_handle rfh = cellRep.at(cellId);
+				Face_handle & rfh = cellRep.at(cellId); //reference is needed so that the cellRep is correctly updated if it changes during the next phase
 				std::vector<Face_handle> cellTriangs;
 				CGAL::Unique_hash_map<Face_handle, uint32_t> cellTriangMap;//with hop-distance from rfh
 				
@@ -315,6 +313,17 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					std::vector<Face_handle> tmpCellTriangs;
 					this->hopDistances(rfh, tmpCellTriangs, cellTriangMap, maxHopDistance);
 					for(Face_handle & fh : tmpCellTriangs) {
+						//check if the sourrounding faces all have the same id, skip these since they can't have a large hop-distance than a border-triangle
+						bool isBorder = false;
+						for(int i=0; i < 3; ++i) {
+							if (m_faceToCellId[fh->neighbor(i)] != cellId) {
+								isBorder = true;
+								break;
+							}
+						}
+						if (!isBorder) {
+							continue;
+						}
 						uint32_t myMaxHopDistance;
 						this->hopDistances(fh, cellTriangs, cellTriangMap, myMaxHopDistance);
 						if (myMaxHopDistance > maxHopDistance) {
@@ -325,6 +334,8 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				}
 				//calculate values for the correct start-cell
 				this->hopDistances(rfh, cellTriangs, cellTriangMap, maxHopDistance);
+				//no need to set the cellrep since its taken by reference
+				
 				//now split the cell by adding all faces with a maximum distance of maxDist/2 into the current cell
 				//and all remaining faces into newly connected cells
 				//the faces in cellTriangs are already sorted according to the hop-distance
@@ -359,18 +370,17 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					cellRep.push_back(*faceIt);
 					std::vector<Face_handle> stack;
 					stack.push_back(*faceIt);
+					cellTriangMap[*faceIt] = newCellId;
 					while(stack.size()) {
 						Face_handle fh = stack.back();
 						stack.pop_back();
-						assert(cellTriangMap[fh] == 0xFFFFFFFF);
-						assert(m_faceToCellId.is_defined(fh));
-						cellTriangMap[fh] = newCellId;
 						m_faceToCellId[fh] = newCellId;
 						++newCellSize;
 						for(int i=0; i < 3; ++i) {
 							Face_handle nfh = fh->neighbor(i);
-							if (cellTriangMap[nfh] == 0xFFFFFFFF) {
+							if (cellTriangMap.is_defined(nfh) && cellTriangMap[nfh] == 0xFFFFFFFF) {
 								stack.push_back(nfh);
+								cellTriangMap[nfh] = newCellId;
 							}
 						}
 					}
@@ -386,17 +396,23 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 			}
 		}
 		std::cout << "Found " << m_refinedCellIdToUnrefined.size() << " cells" << std::endl;
-	}
-	{
-		std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
-		for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-			uint32_t fid = cellId(it);
-			triangCountOfCells.at(fid) += 1;
+		for(uint32_t x : cellSizes) {
+			assert(x <= cellSizeTh);
 		}
-		for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-			assert(triangCountOfCells.at(cellId) <= cellSizeTh && triangCountOfCells.at(cellId));
+		{
+			assert(cellSizes.size() == cellCount());
+			std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+			for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+				uint32_t fid = cellId(it);
+				triangCountOfCells.at(fid) += 1;
+			}
+			for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+				assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+				assert(triangCountOfCells.at(cellId) <= cellSizeTh && (cellId == 0 || triangCountOfCells.at(cellId)));
+			}
 		}
 	}
+
 	
 	m_grid.initGrid(gridLatCount, gridLonCount);
 }

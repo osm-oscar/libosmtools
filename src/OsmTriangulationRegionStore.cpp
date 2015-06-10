@@ -47,17 +47,23 @@ void OsmTriangulationRegionStore::clear() {
 }
 
 void OsmTriangulationRegionStore::printStats(std::ostream& out) {
+	if (cellCount() <= 1)
+		return;
 	std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
 	for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
 		uint32_t fid = cellId(it);
 		triangCountOfCells.at(fid) += 1;
 	}
-	std::sort(triangCountOfCells.begin(), triangCountOfCells.end());
+	//skip cell 0 since that one is not created by any region ans thus should not contain many or any items
+	
+	std::vector<uint32_t>::const_iterator maxElem = std::max_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
+	std::vector<uint32_t>::const_iterator minElem = std::min_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
+	
 	std::cout << "Cell Triangle stats: \n";
-	std::cout << "\tmin: " << triangCountOfCells.front() << "\n";
-	std::cout << "\tmax: " << triangCountOfCells.back() << "\n";
-	std::cout << "\tmedian: " << triangCountOfCells.at(triangCountOfCells.size()/2) << "\n";
-	std::cout << "\tmean: " << sserialize::statistics::mean(triangCountOfCells.begin(), triangCountOfCells.end(), 0) << "\n";
+	std::cout << "\tmin: " << *maxElem << " at " << maxElem - triangCountOfCells.begin() << "\n";
+	std::cout << "\tmax: " << *minElem << " at " << minElem - triangCountOfCells.begin() << "\n";
+	std::cout << "\tmedian: " << sserialize::statistics::median(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
+	std::cout << "\tmean: " << sserialize::statistics::mean(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
 	std::cout << std::flush;
 }
 
