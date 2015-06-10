@@ -60,8 +60,8 @@ void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 	std::vector<uint32_t>::const_iterator minElem = std::min_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
 	
 	std::cout << "Cell Triangle stats: \n";
-	std::cout << "\tmin: " << *maxElem << " at " << maxElem - triangCountOfCells.begin() << "\n";
-	std::cout << "\tmax: " << *minElem << " at " << minElem - triangCountOfCells.begin() << "\n";
+	std::cout << "\tmin: " << *minElem << " at " << minElem - triangCountOfCells.begin() << "\n";
+	std::cout << "\tmax: " << *maxElem << " at " << maxElem - triangCountOfCells.begin() << "\n";
 	std::cout << "\tmedian: " << sserialize::statistics::median(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
 	std::cout << "\tmean: " << sserialize::statistics::mean(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
 	std::cout << std::flush;
