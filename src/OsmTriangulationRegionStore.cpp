@@ -1,9 +1,116 @@
 #include <osmtools/OsmTriangulationRegionStore.h>
+#include <sserialize/utility/ThreadPool.h>
 
 namespace osmtools {
+namespace detail {
+namespace OsmTriangulationRegionStore {
+
+void CellGraph::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > & bfsTree) {
+	struct WorkContext {
+		std::mutex lock;
+		uint32_t processNode;
+		uint32_t maxHopDist;
+		uint32_t maxHopDistRoot;
+		NodesContainer * nodes;
+	};
+	
+	struct Worker {
+		WorkContext * ctx;
+		SimpleBitVector processedNodes;
+		std::vector< std::pair<uint32_t, uint32_t> > bfsTree; //holds (nodeId, hopDist)
+		Worker(WorkContext * wctx) : ctx(wctx) {
+			uint32_t nodeCount = ctx->nodes->size();
+			processedNodes.resize(nodeCount);
+			bfsTree.reserve(nodeCount);
+		}
+		Worker(const Worker & other) : Worker(other.ctx) {}
+		void calc(uint32_t rootNodeId) {
+			processedNodes.reset();
+			bfsTree.clear();
+			bfsTree.emplace_back(rootNodeId, 0);
+			for(uint32_t i(0); i < bfsTree.size(); ++i) {
+				std::pair<uint32_t, uint32_t> & nodeInfo = bfsTree[i];
+				const FaceNode & fn = (*(ctx->nodes))[nodeInfo.first];
+				for(int j(0); j < 3; ++j) {
+					uint32_t nid = fn.neighbours[j];
+					if (nid != FaceNode::NullNeighbor && !processedNodes.isSet(nid)) {
+						bfsTree.emplace_back(nid, nodeInfo.second+1);
+						processedNodes.set(nid);
+					}
+				}
+			}
+		}
+		void operator()() {
+			while(true) {
+				std::unique_lock<std::mutex> lck(ctx->lock);
+				if (ctx->processNode >= ctx->nodes->size()) {
+					return;
+				}
+				uint32_t myRootNode = ctx->processNode;
+				ctx->processNode += 1;
+				lck.unlock();
+				calc(myRootNode);
+				lck.lock();
+				uint32_t maxHopDist = bfsTree.back().second;
+				if (maxHopDist > ctx->maxHopDist) {
+					ctx->maxHopDist = maxHopDist;
+					ctx->maxHopDistRoot = myRootNode;
+				}
+			}
+		}
+	};
+	WorkContext wctx;
+	wctx.processNode = 0;
+	wctx.maxHopDist = 0;
+	wctx.maxHopDistRoot = 0;
+	wctx.nodes = &m_nodes;
+
+	Worker w(&wctx);
+	sserialize::ThreadPool::execute(w, 1);//(wctx.nodes->size() > 1000 ? 0 : 1));
+	
+	w.calc(wctx.maxHopDistRoot);
+	bfsTree = std::move(w.bfsTree);
+}
+
+
+}}//end namespace detail::OsmTriangulationRegionStore
 
 OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const OsmTriangulationRegionStore::Face_handle& fh) {
 	return CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
+}
+
+void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, std::vector<Face_handle> & cgFaces, CGAL::Unique_hash_map<Face_handle, uint32_t> & faceToNodeId, CellGraph& cg) {
+	faceToNodeId.clear();
+	cgFaces.clear();
+	cg.m_nodes.clear();
+	
+
+	uint32_t myCellId = m_faceToCellId[rfh];
+	cgFaces.push_back(rfh);
+	faceToNodeId[rfh] = 0;
+	for(uint32_t i(0); i < cgFaces.size(); ++i) {
+		Face_handle fh = cgFaces[i];
+		for(int j(0); j < 3; ++j) {
+			Face_handle nfh = fh->neighbor(j);
+			if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
+				faceToNodeId[nfh] = cgFaces.size();
+				cgFaces.emplace_back(nfh);
+			}
+		}
+	}
+	for(const Face_handle & fh : cgFaces) {
+		CellGraph::FaceNode fn;
+		for(int i(0); i < 3; ++i) {
+			Face_handle nfh = fh->neighbor(i);
+			if (faceToNodeId.is_defined(nfh)) {
+				fn.neighbours[i] = faceToNodeId[nfh];
+			}
+			else {
+				fn.neighbours[i] = CellGraph::FaceNode::NullNeighbor;
+			}
+		}
+		cg.m_nodes.push_back(fn);
+	}
 }
 
 
@@ -29,7 +136,6 @@ hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CG
 		}
 	}
 }
-
 
 uint32_t OsmTriangulationRegionStore::cellId(const OsmTriangulationRegionStore::Face_handle& fh) {
 	if (m_faceToCellId.is_defined(fh)) {

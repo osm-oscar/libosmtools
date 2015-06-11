@@ -20,6 +20,45 @@
 #include <mutex>
 
 namespace osmtools {
+class OsmTriangulationRegionStore;
+
+namespace detail {
+namespace OsmTriangulationRegionStore {
+
+class CellGraph {
+private:
+	friend class osmtools::OsmTriangulationRegionStore;
+public:
+	struct FaceNode {
+		static const uint32_t NullNeighbor = 0xFFFFFFFF;
+		///by definition: if neighbours[i] == 0xFFFFFFFF => no neighbor
+		uint32_t neighbours[3];
+	};
+	struct SimpleBitVector {
+		std::vector<uint64_t> m_d;
+		inline void resize(uint32_t count) { m_d.resize(count/64+1, 0); }
+		inline void set(uint32_t pos) { m_d.at(pos/64) |= (static_cast<uint64_t>(1) << (pos%64)); }
+		inline bool isSet(uint32_t pos) { return m_d.at(pos/64) & (static_cast<uint64_t>(1) << (pos%64)); }
+		inline void reset() { m_d.assign(m_d.size(), 0); }
+	};
+	struct HopDistanceCalculator {
+		SimpleBitVector hmap;
+		std::vector<uint32_t> hopDists;
+	};
+	typedef std::vector<FaceNode> NodesContainer;
+private:
+	NodesContainer m_nodes;
+public:
+	CellGraph() {}
+	~CellGraph() {}
+	inline uint32_t size() const { return m_nodes.size(); }
+	///@param bfsTree (nodeId, hopdistance from faceNodeId)
+	void calcMaxHopDistance(std::vector< std::pair< uint32_t, uint32_t > >& bfsTree);
+	const FaceNode & node(uint32_t pos) const { return m_nodes.at(pos); }
+	FaceNode & node(uint32_t pos) { return m_nodes.at(pos); }
+};
+
+}}//end namespace detail::OsmTriangulationRegionStore
 
 /** This class splits the arrangement of regions into cells to support fast point-in-polygon look-ups
   *
@@ -44,6 +83,7 @@ public:
 	typedef sserialize::CFLArray<RegionListContainer> RegionList;
 	typedef GridLocator::TriangulationDataStructure::Finite_faces_iterator Finite_faces_iterator;
 private:
+	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
 		std::size_t operator()(const Face_handle & f) const {
@@ -60,6 +100,7 @@ private:
 	typedef CGAL::Unique_hash_map<Face_handle, uint32_t> FaceCellIdMap;
 private:
 	static Point centroid(const Face_handle & fh);
+	void cellGraph(const Face_handle& rfh, std::vector<Face_handle> & cgFaces, CGAL::Unique_hash_map<Face_handle, uint32_t> & faceToNodeId, CellGraph& cg);
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
 	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
 private:
@@ -289,12 +330,21 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		std::cout << "Splitting cells larger than " << cellSizeTh << " triangles" << std::endl;
 		std::vector<uint32_t> cellSizes(m_refinedCellIdToUnrefined.size(), 0);
 		std::vector<Face_handle> cellRep(m_refinedCellIdToUnrefined.size());
-		std::vector<Face_handle> stack;
 		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
 			uint32_t faceCellId = m_faceToCellId[it];
 			cellSizes.at(faceCellId) += 1;
 			cellRep.at(faceCellId) = it;
 		}
+
+
+		//Stuff needed to handle the explicit dual-graph
+		CellGraph cg;
+		std::vector<Face_handle> cgFaces;
+		CGAL::Unique_hash_map<Face_handle, uint32_t> cgMap;
+		std::vector< std::pair<uint32_t, uint32_t> > bfsTree;
+		CellGraph::SimpleBitVector processedBfsTreeNodes;
+		std::vector<uint32_t> stack;
+		
 		while (true) {
 			uint32_t prevCellIdCount = cellRep.size();
 			//skipt cellId=0 since that is the infinite_face
@@ -302,89 +352,59 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				if (cellSizes.at(cellId) < cellSizeTh) {
 					continue;
 				}
-				//now calculate the maximum hop-distance between the root-face and the other cell-faces
-				uint32_t maxHopDistance = 0;
-				Face_handle & rfh = cellRep.at(cellId); //reference is needed so that the cellRep is correctly updated if it changes during the next phase
-				std::vector<Face_handle> cellTriangs;
-				CGAL::Unique_hash_map<Face_handle, uint32_t> cellTriangMap;//with hop-distance from rfh
+				cellGraph(cellRep.at(cellId), cgFaces, cgMap, cg);
+				
+				processedBfsTreeNodes.resize(cgFaces.size());
+				processedBfsTreeNodes.reset();
 				
 				//get the face with maximum hop-distance, this is currently O(n^2)
-				{
-					std::vector<Face_handle> tmpCellTriangs;
-					this->hopDistances(rfh, tmpCellTriangs, cellTriangMap, maxHopDistance);
-					for(Face_handle & fh : tmpCellTriangs) {
-						//check if the sourrounding faces all have the same id, skip these since they can't have a large hop-distance than a border-triangle
-						bool isBorder = false;
-						for(int i=0; i < 3; ++i) {
-							if (m_faceToCellId[fh->neighbor(i)] != cellId) {
-								isBorder = true;
-								break;
-							}
-						}
-						if (!isBorder) {
-							continue;
-						}
-						uint32_t myMaxHopDistance;
-						this->hopDistances(fh, cellTriangs, cellTriangMap, myMaxHopDistance);
-						if (myMaxHopDistance > maxHopDistance) {
-							maxHopDistance = 0;
-							rfh = fh;
-						}
-					}
-				}
-				//calculate values for the correct start-cell
-				this->hopDistances(rfh, cellTriangs, cellTriangMap, maxHopDistance);
-				//no need to set the cellrep since its taken by reference
+				cg.calcMaxHopDistance(bfsTree);
+				//set new cellRep
+				cellRep.at(cellId) = cgFaces.at(bfsTree.front().first);
 				
 				//now split the cell by adding all faces with a maximum distance of maxDist/2 into the current cell
 				//and all remaining faces into newly connected cells
-				//the faces in cellTriangs are already sorted according to the hop-distance
-				maxHopDistance /= 2;
-				auto faceIt (cellTriangs.begin()), end(cellTriangs.end());
-				for(; faceIt != end; ++faceIt) {
-					uint32_t & val = cellTriangMap[*faceIt];
-					if (val <= maxHopDistance) {
-						val = 0;
-					}
-					else {
-						break;
-					}
+				//the faces in bfsTree are already sorted according to the hop-distance
+				uint32_t maxHopDistance = bfsTree.back().second / 2;
+				auto bfsIt (bfsTree.begin()), bfsEnd(bfsTree.end());
+				while(bfsIt->second < maxHopDistance) {
+					processedBfsTreeNodes.set(bfsIt->first);
+					++bfsIt;
 				}
 				//update the size of the old cell
-				cellSizes.at(cellId) = faceIt-cellTriangs.begin();
-				//faceIt points to the first face with hopdistance > maxHopDistance
+				cellSizes.at(cellId) = bfsIt-bfsTree.begin();
+				//bfsIt points to the first node with hopdistance > maxHopDistance
 				//reset the value of the map to assign new ids to the faces
-				for(auto it(faceIt); it != end; ++it) {
-					cellTriangMap[*it] = 0xFFFFFFFF;
-				}
+				
 				//now assign new ids to all faces that are not part of the old cell anymore
-				for(; faceIt != end; ++faceIt) {
+				for(; bfsIt != bfsEnd; ++bfsIt) {
 					//face has a cellId
-					if (cellTriangMap[*faceIt] != 0xFFFFFFFF) {
+					if (processedBfsTreeNodes.isSet(bfsIt->first)) {
 						continue;
 					}
 					//create the connected components for this cell
 					uint32_t newCellId = m_refinedCellIdToUnrefined.size();
 					uint32_t newCellSize = 0;
 					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
-					cellRep.push_back(*faceIt);
-					std::vector<Face_handle> stack;
-					stack.push_back(*faceIt);
-					cellTriangMap[*faceIt] = newCellId;
+					cellRep.push_back(cgFaces.at(bfsIt->first));
+					stack.clear();
+					stack.push_back(bfsIt->first);
 					while(stack.size()) {
-						Face_handle fh = stack.back();
+						uint32_t nodeId = stack.back();
 						stack.pop_back();
-						m_faceToCellId[fh] = newCellId;
+						const CellGraph::FaceNode & fn = cg.node(nodeId);
+						
+						m_faceToCellId[ cgFaces.at(nodeId) ] = newCellId;
 						++newCellSize;
+						
 						for(int i=0; i < 3; ++i) {
-							Face_handle nfh = fh->neighbor(i);
-							if (cellTriangMap.is_defined(nfh) && cellTriangMap[nfh] == 0xFFFFFFFF) {
-								stack.push_back(nfh);
-								cellTriangMap[nfh] = newCellId;
+							uint32_t neighborNodeId = fn.neighbours[i];
+							if (neighborNodeId != CellGraph::FaceNode::NullNeighbor && !processedBfsTreeNodes.isSet(nodeId)) {
+								stack.push_back(neighborNodeId);
+								processedBfsTreeNodes.set(neighborNodeId);
 							}
 						}
 					}
-					stack.clear();
 					cellSizes.push_back(newCellSize);
 				}
 			}
