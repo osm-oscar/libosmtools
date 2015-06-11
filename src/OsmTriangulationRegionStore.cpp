@@ -28,6 +28,7 @@ void CellGraph::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > 
 			processedNodes.reset();
 			bfsTree.clear();
 			bfsTree.emplace_back(rootNodeId, 0);
+			processedNodes.set(rootNodeId);
 			for(uint32_t i(0); i < bfsTree.size(); ++i) {
 				std::pair<uint32_t, uint32_t> & nodeInfo = bfsTree[i];
 				const FaceNode & fn = (*(ctx->nodes))[nodeInfo.first];
@@ -66,7 +67,7 @@ void CellGraph::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > 
 	wctx.nodes = &m_nodes;
 
 	Worker w(&wctx);
-	sserialize::ThreadPool::execute(w, 1);//(wctx.nodes->size() > 1000 ? 0 : 1));
+	sserialize::ThreadPool::execute(w, (wctx.nodes->size() > 1000 ? 0 : 1));
 	
 	w.calc(wctx.maxHopDistRoot);
 	bfsTree = std::move(w.bfsTree);

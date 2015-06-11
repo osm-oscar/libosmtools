@@ -7,6 +7,8 @@
 #include <osmtools/OsmGridRegionTree.h>
 #include <osmtools/TriangulationGridLocater.h>
 
+#include <sserialize/utility/TimeMeasuerer.h>
+
 //CGAL includes
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
@@ -40,10 +42,6 @@ public:
 		inline void set(uint32_t pos) { m_d.at(pos/64) |= (static_cast<uint64_t>(1) << (pos%64)); }
 		inline bool isSet(uint32_t pos) { return m_d.at(pos/64) & (static_cast<uint64_t>(1) << (pos%64)); }
 		inline void reset() { m_d.assign(m_d.size(), 0); }
-	};
-	struct HopDistanceCalculator {
-		SimpleBitVector hmap;
-		std::vector<uint32_t> hopDists;
 	};
 	typedef std::vector<FaceNode> NodesContainer;
 private:
@@ -327,15 +325,18 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	}
 	//check if there are any cells that are too large
 	if (cellSizeTh < std::numeric_limits<uint32_t>::max()) {
+		sserialize::TimeMeasurer tm;
+		tm.begin();
 		std::cout << "Splitting cells larger than " << cellSizeTh << " triangles" << std::endl;
 		std::vector<uint32_t> cellSizes(m_refinedCellIdToUnrefined.size(), 0);
 		std::vector<Face_handle> cellRep(m_refinedCellIdToUnrefined.size());
 		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
 			uint32_t faceCellId = m_faceToCellId[it];
+			if (!cellSizes.at(faceCellId)) {
+				cellRep.at(faceCellId) = it;
+			}
 			cellSizes.at(faceCellId) += 1;
-			cellRep.at(faceCellId) = it;
 		}
-
 
 		//Stuff needed to handle the explicit dual-graph
 		CellGraph cg;
@@ -345,14 +346,21 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		CellGraph::SimpleBitVector processedBfsTreeNodes;
 		std::vector<uint32_t> stack;
 		
-		while (true) {
+		for(uint32_t round(0); true; ++round) {
+			std::cout << "Round " << round << std::endl;
 			uint32_t prevCellIdCount = cellRep.size();
 			//skipt cellId=0 since that is the infinite_face
+			sserialize::ProgressInfo pinfo;
+			pinfo.begin(cellRep.size(), "Splitting");
 			for(uint32_t cellId(1); cellId < cellRep.size(); ++cellId) {
 				if (cellSizes.at(cellId) < cellSizeTh) {
 					continue;
 				}
+				uint32_t processedNodesCount = 0;
+				
 				cellGraph(cellRep.at(cellId), cgFaces, cgMap, cg);
+				assert(cgFaces.size() == cellSizes.at(cellId));
+				assert(cg.size() == cellSizes.at(cellId));
 				
 				processedBfsTreeNodes.resize(cgFaces.size());
 				processedBfsTreeNodes.reset();
@@ -367,8 +375,9 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				//the faces in bfsTree are already sorted according to the hop-distance
 				uint32_t maxHopDistance = bfsTree.back().second / 2;
 				auto bfsIt (bfsTree.begin()), bfsEnd(bfsTree.end());
-				while(bfsIt->second < maxHopDistance) {
-					processedBfsTreeNodes.set(bfsIt->first);
+				while(bfsIt->second <= maxHopDistance) {
+					assert(!processedBfsTreeNodes.isSet(bfsIt->first));
+					processedBfsTreeNodes.set(bfsIt->first);++processedNodesCount;
 					++bfsIt;
 				}
 				//update the size of the old cell
@@ -378,7 +387,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				
 				//now assign new ids to all faces that are not part of the old cell anymore
 				for(; bfsIt != bfsEnd; ++bfsIt) {
-					//face has a cellId
 					if (processedBfsTreeNodes.isSet(bfsIt->first)) {
 						continue;
 					}
@@ -389,6 +397,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					cellRep.push_back(cgFaces.at(bfsIt->first));
 					stack.clear();
 					stack.push_back(bfsIt->first);
+					processedBfsTreeNodes.set(bfsIt->first);++processedNodesCount;
 					while(stack.size()) {
 						uint32_t nodeId = stack.back();
 						stack.pop_back();
@@ -397,17 +406,38 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 						m_faceToCellId[ cgFaces.at(nodeId) ] = newCellId;
 						++newCellSize;
 						
-						for(int i=0; i < 3; ++i) {
+						for(int i(0); i < 3; ++i) {
 							uint32_t neighborNodeId = fn.neighbours[i];
-							if (neighborNodeId != CellGraph::FaceNode::NullNeighbor && !processedBfsTreeNodes.isSet(nodeId)) {
+							if (neighborNodeId != CellGraph::FaceNode::NullNeighbor && !processedBfsTreeNodes.isSet(neighborNodeId)) {
 								stack.push_back(neighborNodeId);
-								processedBfsTreeNodes.set(neighborNodeId);
+								assert(!processedBfsTreeNodes.isSet(neighborNodeId));
+								processedBfsTreeNodes.set(neighborNodeId);++processedNodesCount;
 							}
 						}
 					}
 					cellSizes.push_back(newCellSize);
 				}
+				pinfo(cellId);
+				assert(processedNodesCount == cg.size());
+				
+#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
+		{
+			assert(cellSizes.size() == cellCount());
+			std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+			for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+				uint32_t fid = this->cellId(it);
+				triangCountOfCells.at(fid) += 1;
 			}
+			for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+				assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+			}
+		}
+#endif
+				
+				
+				
+			}
+			pinfo.end();
 			assert(cellRep.size() == cellSizes.size());
 			assert(cellRep.size() == m_refinedCellIdToUnrefined.size());
 			//if no new cell was created then all cells are smaller than cellSizeTh
@@ -415,7 +445,10 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				break;
 			}
 		}
+		tm.end();
+		std::cout << "Took " << tm << " to split the cells" << std::endl;
 		std::cout << "Found " << m_refinedCellIdToUnrefined.size() << " cells" << std::endl;
+#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
 		for(uint32_t x : cellSizes) {
 			assert(x <= cellSizeTh);
 		}
@@ -431,8 +464,8 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				assert(triangCountOfCells.at(cellId) <= cellSizeTh && (cellId == 0 || triangCountOfCells.at(cellId)));
 			}
 		}
+#endif
 	}
-
 	
 	m_grid.initGrid(gridLatCount, gridLonCount);
 }
