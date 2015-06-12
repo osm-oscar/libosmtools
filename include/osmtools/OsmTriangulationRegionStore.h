@@ -147,6 +147,7 @@ public:
 	Finite_faces_iterator finite_faces_end() { return m_grid.tds().finite_faces_end(); }
 	
 	void cellGraph(const Face_handle& rfh, CellGraph& cg);
+	std::vector<Face_handle> cellRepresentatives();
 	
 	void printStats(std::ostream & out);
 };

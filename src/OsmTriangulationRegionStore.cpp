@@ -93,6 +93,20 @@ OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const O
 	return CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
 }
 
+std::vector< osmtools::OsmTriangulationRegionStore::Face_handle > OsmTriangulationRegionStore::cellRepresentatives() {
+	CellGraph::SimpleBitVector sbv;
+	sbv.resize(cellCount());
+	std::vector<Face_handle> cellRep(m_refinedCellIdToUnrefined.size());
+	for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
+		uint32_t faceCellId = m_faceToCellId[it];
+		if (!sbv.isSet(faceCellId)) {
+			cellRep.at(faceCellId) = it;
+			sbv.set(faceCellId);
+		}
+	}
+	return cellRep;
+}
+
 void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, CellGraph& cg) {
 	std::vector<Face_handle> & cgFaces = cg.m_faces;
 	CGAL::Unique_hash_map<Face_handle, uint32_t> & faceToNodeId = cg.m_faceToNodeId;
