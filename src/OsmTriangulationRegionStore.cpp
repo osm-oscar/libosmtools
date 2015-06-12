@@ -5,7 +5,7 @@ namespace osmtools {
 namespace detail {
 namespace OsmTriangulationRegionStore {
 
-void CellGraph::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > & bfsTree) {
+void CellGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > & bfsTree) {
 	struct WorkContext {
 		std::mutex lock;
 		uint32_t processNode;
@@ -76,11 +76,27 @@ void CellGraph::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > 
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
+OsmTriangulationRegionStore::Face_handle OsmTriangulationRegionStore::CellGraph::face(uint32_t faceNodeId) {
+	return m_faces.at(faceNodeId);
+}
+
+uint32_t OsmTriangulationRegionStore::CellGraph::node(const OsmTriangulationRegionStore::Face_handle& fh) {
+	if (m_faceToNodeId.is_defined(fh)) {
+		return m_faceToNodeId[fh];
+	}
+	throw std::out_of_range("OsmTriangulationRegionStore::CellGraph::node");
+	return CellGraphBase::NullFace;
+}
+
+
 OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const OsmTriangulationRegionStore::Face_handle& fh) {
 	return CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
 }
 
-void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, std::vector<Face_handle> & cgFaces, CGAL::Unique_hash_map<Face_handle, uint32_t> & faceToNodeId, CellGraph& cg) {
+void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, CellGraph& cg) {
+	std::vector<Face_handle> & cgFaces = cg.m_faces;
+	CGAL::Unique_hash_map<Face_handle, uint32_t> & faceToNodeId = cg.m_faceToNodeId;
+	
 	faceToNodeId.clear();
 	cgFaces.clear();
 	cg.m_nodes.clear();
