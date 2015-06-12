@@ -5,7 +5,7 @@ namespace osmtools {
 namespace detail {
 namespace OsmTriangulationRegionStore {
 
-void CellGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > & bfsTree) {
+void CTGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > & bfsTree) {
 	struct WorkContext {
 		std::mutex lock;
 		uint32_t processNode;
@@ -76,16 +76,16 @@ void CellGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
-OsmTriangulationRegionStore::Face_handle OsmTriangulationRegionStore::CellGraph::face(uint32_t faceNodeId) {
+OsmTriangulationRegionStore::Face_handle OsmTriangulationRegionStore::CTGraph::face(uint32_t faceNodeId) {
 	return m_faces.at(faceNodeId);
 }
 
-uint32_t OsmTriangulationRegionStore::CellGraph::node(const OsmTriangulationRegionStore::Face_handle& fh) {
+uint32_t OsmTriangulationRegionStore::CTGraph::node(const OsmTriangulationRegionStore::Face_handle& fh) {
 	if (m_faceToNodeId.is_defined(fh)) {
 		return m_faceToNodeId[fh];
 	}
 	throw std::out_of_range("OsmTriangulationRegionStore::CellGraph::node");
-	return CellGraphBase::NullFace;
+	return CTGraph::NullFace;
 }
 
 
@@ -93,21 +93,21 @@ OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const O
 	return CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
 }
 
-std::vector< osmtools::OsmTriangulationRegionStore::Face_handle > OsmTriangulationRegionStore::cellRepresentatives() {
-	CellGraph::SimpleBitVector sbv;
-	sbv.resize(cellCount());
-	std::vector<Face_handle> cellRep(m_refinedCellIdToUnrefined.size());
+void OsmTriangulationRegionStore::cellInfo(std::vector<Face_handle> & cellRep, std::vector<uint32_t> & cellSizes) {
+	cellRep.clear();
+	cellSizes.clear();
+	cellSizes.resize(m_refinedCellIdToUnrefined.size(), 0);
+	cellRep.resize(m_refinedCellIdToUnrefined.size());
 	for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
 		uint32_t faceCellId = m_faceToCellId[it];
-		if (!sbv.isSet(faceCellId)) {
+		if (!cellSizes.at(faceCellId)) {
 			cellRep.at(faceCellId) = it;
-			sbv.set(faceCellId);
 		}
+		cellSizes.at(faceCellId) += 1;
 	}
-	return cellRep;
 }
 
-void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, CellGraph& cg) {
+void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) {
 	std::vector<Face_handle> & cgFaces = cg.m_faces;
 	CGAL::Unique_hash_map<Face_handle, uint32_t> & faceToNodeId = cg.m_faceToNodeId;
 	
@@ -115,8 +115,14 @@ void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, CellGraph& c
 	cgFaces.clear();
 	cg.m_nodes.clear();
 
+	if (!m_faceToCellId.is_defined(rfh)) {
+		throw std::out_of_range("OsmTriangulationRegionStore::ctGraph called with invalid cell representative");
+	}
+	
 	uint32_t myCellId = m_faceToCellId[rfh];
 	cg.m_cellId = myCellId;
+	
+	
 
 	cgFaces.push_back(rfh);
 	faceToNodeId[rfh] = 0;
@@ -131,14 +137,14 @@ void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, CellGraph& c
 		}
 	}
 	for(const Face_handle & fh : cgFaces) {
-		CellGraph::FaceNode fn;
+		CTGraph::FaceNode fn;
 		for(int i(0); i < 3; ++i) {
 			Face_handle nfh = fh->neighbor(i);
 			if (faceToNodeId.is_defined(nfh)) {
 				fn.neighbours[i] = faceToNodeId[nfh];
 			}
 			else {
-				fn.neighbours[i] = CellGraph::FaceNode::NullNeighbor;
+				fn.neighbours[i] = CTGraph::FaceNode::NullNeighbor;
 			}
 		}
 		cg.m_nodes.push_back(fn);

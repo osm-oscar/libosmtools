@@ -27,22 +27,24 @@ class OsmTriangulationRegionStore;
 namespace detail {
 namespace OsmTriangulationRegionStore {
 
-class CellGraphBase {
+struct SimpleBitVector {
+	std::vector<uint64_t> m_d;
+	inline void resize(uint32_t count) { m_d.resize(count/64+1, 0); }
+	inline void set(uint32_t pos) { m_d.at(pos/64) |= (static_cast<uint64_t>(1) << (pos%64)); }
+	inline bool isSet(uint32_t pos) { return m_d.at(pos/64) & (static_cast<uint64_t>(1) << (pos%64)); }
+	inline void reset() { m_d.assign(m_d.size(), 0); }
+};
+
+//CellTriangulationGraph
+class CTGraphBase {
 private:
 	friend class osmtools::OsmTriangulationRegionStore;
 public:
 	static const uint32_t NullFace = 0xFFFFFFFF;
 	struct FaceNode {
-		static const uint32_t NullNeighbor = CellGraphBase::NullFace;
+		static const uint32_t NullNeighbor = CTGraphBase::NullFace;
 		///by definition: if neighbours[i] == 0xFFFFFFFF => no neighbor
 		uint32_t neighbours[3];
-	};
-	struct SimpleBitVector {
-		std::vector<uint64_t> m_d;
-		inline void resize(uint32_t count) { m_d.resize(count/64+1, 0); }
-		inline void set(uint32_t pos) { m_d.at(pos/64) |= (static_cast<uint64_t>(1) << (pos%64)); }
-		inline bool isSet(uint32_t pos) { return m_d.at(pos/64) & (static_cast<uint64_t>(1) << (pos%64)); }
-		inline void reset() { m_d.assign(m_d.size(), 0); }
 	};
 	typedef std::vector<FaceNode> NodesContainer;
 private:
@@ -52,8 +54,8 @@ protected:
 	NodesContainer & nodes() { return m_nodes; }
 	const NodesContainer & nodes() const { return m_nodes; }
 public:
-	CellGraphBase() {}
-	virtual ~CellGraphBase() {}
+	CTGraphBase() {}
+	virtual ~CTGraphBase() {}
 	inline uint32_t size() const { return m_nodes.size(); }
 	inline uint32_t cellId() const { return m_cellId; }
 	///@param bfsTree (nodeId, hopdistance from faceNodeId)
@@ -86,19 +88,20 @@ public:
 	typedef sserialize::MMVector<uint32_t> RegionListContainer;
 	typedef sserialize::CFLArray<RegionListContainer> RegionList;
 	typedef GridLocator::TriangulationDataStructure::Finite_faces_iterator Finite_faces_iterator;
+	typedef detail::OsmTriangulationRegionStore::SimpleBitVector SimpleBitVector;
 public:
-	class CellGraph: public detail::OsmTriangulationRegionStore::CellGraphBase {
+	class CTGraph: public detail::OsmTriangulationRegionStore::CTGraphBase {
 	private:
 		friend class OsmTriangulationRegionStore;
 	private:
 		std::vector<Face_handle> m_faces;
 		CGAL::Unique_hash_map<Face_handle, uint32_t> m_faceToNodeId;
 	public:
-		CellGraph() {}
-		virtual ~CellGraph() {}
+		CTGraph() {}
+		virtual ~CTGraph() {}
 		Face_handle face(uint32_t faceNodeId);
 		uint32_t node(const Face_handle & fh);
-		using CellGraphBase::node;
+		using CTGraphBase::node;
 	};
 private:
 	struct FaceHandleHash {
@@ -146,8 +149,8 @@ public:
 	Finite_faces_iterator finite_faces_begin() { return m_grid.tds().finite_faces_begin(); }
 	Finite_faces_iterator finite_faces_end() { return m_grid.tds().finite_faces_end(); }
 	
-	void cellGraph(const Face_handle& rfh, CellGraph& cg);
-	std::vector<Face_handle> cellRepresentatives();
+	void ctGraph(const Face_handle& rfh, CTGraph& cg);
+	void cellInfo(std::vector<Face_handle> & cellRepresentatives, std::vector<uint32_t> & cellSizes);
 	
 	void printStats(std::ostream & out);
 };
@@ -350,20 +353,14 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		sserialize::TimeMeasurer tm;
 		tm.begin();
 		std::cout << "Splitting cells larger than " << cellSizeTh << " triangles" << std::endl;
-		std::vector<uint32_t> cellSizes(m_refinedCellIdToUnrefined.size(), 0);
-		std::vector<Face_handle> cellRep(m_refinedCellIdToUnrefined.size());
-		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
-			uint32_t faceCellId = m_faceToCellId[it];
-			if (!cellSizes.at(faceCellId)) {
-				cellRep.at(faceCellId) = it;
-			}
-			cellSizes.at(faceCellId) += 1;
-		}
+		std::vector<uint32_t> cellSizes;
+		std::vector<Face_handle> cellRep;
+		cellInfo(cellRep, cellSizes);
 
 		//Stuff needed to handle the explicit dual-graph
-		CellGraph cg;
+		CTGraph cg;
 		std::vector< std::pair<uint32_t, uint32_t> > bfsTree;
-		CellGraph::SimpleBitVector processedBfsTreeNodes;
+		SimpleBitVector processedBfsTreeNodes;
 		std::vector<uint32_t> stack;
 		
 		for(uint32_t round(0); true; ++round) {
@@ -378,7 +375,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				}
 				uint32_t processedNodesCount = 0;
 				
-				cellGraph(cellRep.at(cellId), cg);
+				ctGraph(cellRep.at(cellId), cg);
 				assert(cg.size() == cellSizes.at(cellId));
 				
 				processedBfsTreeNodes.resize(cg.size());
@@ -420,14 +417,14 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					while(stack.size()) {
 						uint32_t nodeId = stack.back();
 						stack.pop_back();
-						const CellGraph::FaceNode & fn = cg.node(nodeId);
+						const CTGraph::FaceNode & fn = cg.node(nodeId);
 						
 						m_faceToCellId[ cg.face(nodeId) ] = newCellId;
 						++newCellSize;
 						
 						for(int i(0); i < 3; ++i) {
 							uint32_t neighborNodeId = fn.neighbours[i];
-							if (neighborNodeId != CellGraph::FaceNode::NullNeighbor && !processedBfsTreeNodes.isSet(neighborNodeId)) {
+							if (neighborNodeId != CTGraph::FaceNode::NullNeighbor && !processedBfsTreeNodes.isSet(neighborNodeId)) {
 								stack.push_back(neighborNodeId);
 								assert(!processedBfsTreeNodes.isSet(neighborNodeId));
 								processedBfsTreeNodes.set(neighborNodeId);++processedNodesCount;
