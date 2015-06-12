@@ -416,7 +416,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					cellRep.push_back(cg.face(bfsIt->first));
 					stack.clear();
 					stack.push_back(bfsIt->first);
-					processedBfsTreeNodes.set(bfsIt->first);
+					processedBfsTreeNodes.set(bfsIt->first);++processedNodesCount;
 					while(stack.size()) {
 						uint32_t nodeId = stack.back();
 						stack.pop_back();
