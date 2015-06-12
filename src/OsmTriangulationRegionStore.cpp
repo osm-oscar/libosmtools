@@ -100,9 +100,10 @@ void OsmTriangulationRegionStore::cellGraph(const Face_handle& rfh, CellGraph& c
 	faceToNodeId.clear();
 	cgFaces.clear();
 	cg.m_nodes.clear();
-	
 
 	uint32_t myCellId = m_faceToCellId[rfh];
+	cg.m_cellId = myCellId;
+
 	cgFaces.push_back(rfh);
 	faceToNodeId[rfh] = 0;
 	for(uint32_t i(0); i < cgFaces.size(); ++i) {

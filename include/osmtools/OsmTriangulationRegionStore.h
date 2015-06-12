@@ -46,6 +46,7 @@ public:
 	};
 	typedef std::vector<FaceNode> NodesContainer;
 private:
+	uint32_t m_cellId;
 	NodesContainer m_nodes;
 protected:
 	NodesContainer & nodes() { return m_nodes; }
@@ -54,6 +55,7 @@ public:
 	CellGraphBase() {}
 	virtual ~CellGraphBase() {}
 	inline uint32_t size() const { return m_nodes.size(); }
+	inline uint32_t cellId() const { return m_cellId; }
 	///@param bfsTree (nodeId, hopdistance from faceNodeId)
 	void calcMaxHopDistance(std::vector< std::pair< uint32_t, uint32_t > >& bfsTree);
 	const FaceNode & node(uint32_t pos) const { return m_nodes.at(pos); }
