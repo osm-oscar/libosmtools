@@ -161,6 +161,8 @@ public:
 		using CTGraphBase::node;
 	};
 	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
+public:
+	static constexpr uint32_t InfiniteFaceId = 0xFFFFFFFF;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -304,7 +306,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		ctx.facesEnd = m_grid.tds().finite_faces_end();
 		
 		//set the infinite_face to cellId=0xFFFFFFFF
-		m_faceToCellId[m_grid.tds().infinite_face()] = 0xFFFFFFFF;
+		m_faceToCellId[m_grid.tds().infinite_face()] = InfiniteFaceId;
 		//cells that are not in any region get cellid 0
 		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
 		

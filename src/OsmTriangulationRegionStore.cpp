@@ -215,7 +215,7 @@ OsmTriangulationRegionStore::CellGraph OsmTriangulationRegionStore::cellGraph() 
 				Face_handle nfh = fh->neighbor(j);
 				if (m_faceToCellId.is_defined(nfh)) {
 					uint32_t oCellId = m_faceToCellId[nfh];
-					if (oCellId != myCellId) {
+					if (oCellId != myCellId && oCellId != InfiniteFaceId) {
 						tmp.emplace(myCellId, oCellId);
 					}
 				}
