@@ -73,6 +73,42 @@ void CTGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> 
 	bfsTree = std::move(w.bfsTree);
 }
 
+CellGraph::CellGraph(CellGraph && other) :
+m_nodePtrs(other.m_nodePtrs),
+m_nodes(std::forward<NodesContainer>(other.m_nodes))
+{
+	other.m_nodePtrs = 0;
+}
+
+CellGraph::CellGraph(const detail::OsmTriangulationRegionStore::CellGraph & other) :
+m_nodePtrs(new NodePointersContainer(*other.m_nodePtrs)),
+m_nodes(other.m_nodes)
+{
+	for(CellNode & cn : m_nodes) {
+		cn.rebind(m_nodePtrs);
+	}
+}
+
+CellGraph::~CellGraph() {
+	delete m_nodePtrs;
+}
+
+CellGraph& CellGraph::operator=(CellGraph && other) {
+	m_nodePtrs = other.m_nodePtrs;
+	other.m_nodePtrs = 0;
+	
+	m_nodes = std::move(other.m_nodes);
+	return *this;
+}
+
+CellGraph& CellGraph::operator=(const CellGraph & other) {
+	m_nodePtrs = new NodePointersContainer(*other.m_nodePtrs);
+	m_nodes = other.m_nodes;
+	for(CellNode & cn : m_nodes) {
+		cn.rebind(m_nodePtrs);
+	}
+	return *this;
+}
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
@@ -122,20 +158,33 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 	uint32_t myCellId = m_faceToCellId[rfh];
 	cg.m_cellId = myCellId;
 	
-	
-
-	cgFaces.push_back(rfh);
-	faceToNodeId[rfh] = 0;
-	for(uint32_t i(0); i < cgFaces.size(); ++i) {
-		Face_handle fh = cgFaces[i];
-		for(int j(0); j < 3; ++j) {
-			Face_handle nfh = fh->neighbor(j);
-			if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
-				faceToNodeId[nfh] = cgFaces.size();
-				cgFaces.emplace_back(nfh);
+	if (m_isRefined) {
+		cgFaces.push_back(rfh);
+		faceToNodeId[rfh] = 0;
+		for(uint32_t i(0); i < cgFaces.size(); ++i) {
+			Face_handle fh = cgFaces[i];
+			for(int j(0); j < 3; ++j) {
+				Face_handle nfh = fh->neighbor(j);
+				if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
+					faceToNodeId[nfh] = cgFaces.size();
+					cgFaces.emplace_back(nfh);
+				}
 			}
 		}
 	}
+	else {//unrefined graph may have unconnected cells
+		for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+			Face_handle fh = it;
+			for(int j(0); j < 3; ++j) {
+				Face_handle nfh = fh->neighbor(j);
+				if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
+					faceToNodeId[nfh] = cgFaces.size();
+					cgFaces.emplace_back(nfh);
+				}
+			}
+		}
+	}
+	
 	for(const Face_handle & fh : cgFaces) {
 		CTGraph::FaceNode fn;
 		for(int i(0); i < 3; ++i) {
@@ -151,6 +200,52 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 	}
 }
 
+OsmTriangulationRegionStore::CellGraph OsmTriangulationRegionStore::cellGraph() {
+	if (!cellCount()) {
+		return CellGraph();
+	}
+	
+	std::vector< std::pair<uint32_t, uint32_t> > edges;
+	{
+		std::unordered_set< std::pair<uint32_t, uint32_t> > tmp;
+		for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+			Face_handle fh = it;
+			uint32_t myCellId = m_faceToCellId[fh];
+			for(int j(0); j < 3; ++j) {
+				Face_handle nfh = fh->neighbor(j);
+				if (m_faceToCellId.is_defined(nfh)) {
+					uint32_t oCellId = m_faceToCellId[nfh];
+					if (oCellId != myCellId) {
+						tmp.emplace(myCellId, oCellId);
+					}
+				}
+			}
+		}
+		edges.insert(edges.end(), tmp.begin(), tmp.end());
+		std::sort(edges.begin(), edges.end());
+	}
+	//now build the graph
+	CellGraph cg;
+	assert(!cg.m_nodePtrs);
+	cg.m_nodePtrs = new CellGraph::NodePointersContainer(sserialize::MM_PROGRAM_MEMORY);
+	
+	uint32_t prevNodeId = 0;
+	CellGraph::NodePointersContainer::size_type prevOffset = 0;
+	for(const std::pair<uint32_t, uint32_t> & e : edges) {
+		if (e.first != prevNodeId) {
+			assert(prevNodeId == cg.m_nodes.size());
+			cg.m_nodes.emplace_back(cg.m_nodePtrs, prevOffset, cg.m_nodePtrs->size()-prevOffset);
+			prevOffset = cg.m_nodePtrs->size();
+			prevNodeId = e.first;
+		}
+		cg.m_nodePtrs->push_back(e.second);
+	}
+	assert(prevNodeId = cg.m_nodes.size());
+	cg.m_nodes.emplace_back(cg.m_nodePtrs, prevOffset, cg.m_nodePtrs->size()-prevOffset);
+	prevOffset = cg.m_nodePtrs->size();
+	
+	return cg;
+}
 
 void OsmTriangulationRegionStore::
 hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist) {
@@ -200,6 +295,7 @@ void OsmTriangulationRegionStore::clearRefinement() {
 	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
+	m_isRefined = false;
 }
 
 void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t threadCount) {
@@ -210,6 +306,7 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 		}
 	}
 	m_refinedCellIdToUnrefined.clear();
+	m_isRefined = true;
 	//now every cell has an id but cells that are not connected may not have different cells
 	//we now have to check for each id if the correspondig faces are all connected through cells with the same id
 	//this essential is a graph traversel to get all connected components where each face is a node and there's an edge between nodes

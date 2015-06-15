@@ -65,6 +65,62 @@ public:
 	FaceNode & node(uint32_t pos) { return m_nodes.at(pos); }
 };
 
+//Graph of the cells of the OsmTriangulationRegionStore
+
+class CellGraph {
+private:
+	friend class osmtools::OsmTriangulationRegionStore;
+public:
+	typedef sserialize::MMVector<uint32_t> NodePointersContainer;
+	
+	class CellNode final {
+	private:
+		friend class CellGraph;
+		friend class osmtools::OsmTriangulationRegionStore;
+	private:
+		typedef sserialize::CFLArray<CellGraph::NodePointersContainer> NodePointers;
+	public:
+		typedef NodePointers::const_iterator const_iterator;
+		typedef NodePointers::iterator iterator;
+	private:
+		NodePointers m_d;
+	private:
+		void rebind(CellGraph::NodePointersContainer * d) { m_d.rebind(d); }
+	public:
+		CellNode(CellGraph::NodePointersContainer * d, CellGraph::NodePointersContainer::size_type offset, CellGraph::NodePointersContainer::size_type size) :
+		m_d(d, offset, size) {}
+		CellNode() {}
+		~CellNode() {}
+		inline uint32_t size() const { return m_d.size(); }
+		inline iterator begin() { return m_d.begin(); }
+		inline const_iterator begin() const { return m_d.begin(); }
+		inline const_iterator cbegin() const { return m_d.cbegin(); }
+		
+		inline iterator end() { return m_d.end(); }
+		inline const_iterator end() const { return m_d.end(); }
+		inline const_iterator cend() const { return m_d.cend(); }
+		
+	};
+	typedef std::vector<CellNode> NodesContainer;
+private:
+	NodePointersContainer * m_nodePtrs;
+	NodesContainer m_nodes;
+protected:
+	NodesContainer & nodes() { return m_nodes; }
+	const NodesContainer & nodes() const { return m_nodes; }
+public:
+	CellGraph() : m_nodePtrs(0) {}
+	CellGraph(const CellGraph & other);
+	CellGraph(CellGraph && other);
+	virtual ~CellGraph();
+	CellGraph & operator=(const CellGraph & other);
+	CellGraph & operator=(CellGraph && other);
+
+	inline uint32_t size() const { return m_nodes.size(); }
+	inline const CellNode & node(uint32_t pos) const { return m_nodes.at(pos); }
+	inline CellNode & node(uint32_t pos) { return m_nodes.at(pos); }
+};
+
 }}//end namespace detail::OsmTriangulationRegionStore
 
 /** This class splits the arrangement of regions into cells to support fast point-in-polygon look-ups
@@ -104,6 +160,7 @@ public:
 		uint32_t node(const Face_handle & fh);
 		using CTGraphBase::node;
 	};
+	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -129,6 +186,7 @@ private:
 	RegionListContainer m_cellLists;
 	std::vector<RegionList> m_cellIdToCellList;
 	std::vector<uint32_t> m_refinedCellIdToUnrefined;
+	bool m_isRefined;
 	std::mutex m_lock;
 public:
 	OsmTriangulationRegionStore() {}
@@ -154,6 +212,7 @@ public:
 	Finite_faces_iterator finite_faces_begin() { return m_grid.tds().finite_faces_begin(); }
 	Finite_faces_iterator finite_faces_end() { return m_grid.tds().finite_faces_end(); }
 	
+	CellGraph cellGraph();
 	void ctGraph(const Face_handle& rfh, CTGraph& cg);
 	void cellInfo(std::vector<Face_handle> & cellRepresentatives, std::vector<uint32_t> & cellSizes);
 	
