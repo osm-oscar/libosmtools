@@ -265,7 +265,8 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 		//Stuff needed to handle the explicit dual-graph
 		CTGraph cg;
 		std::vector< std::pair<uint32_t, uint32_t> > bfsTree;
-		SimpleBitVector processedBfsTreeNodes;
+		std::vector<uint32_t> leftNodeBfs, rightNodeBfs; //(id, hopdist)
+		SimpleBitVector processedTreeNodes;
 		std::vector<uint32_t> stack;
 		
 		for(uint32_t round(0); true; ++round) {
@@ -278,66 +279,80 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 				if (cellSizes.at(cellId) < cellSizeTh) {
 					continue;
 				}
-				uint32_t processedNodesCount = 0;
 				
 				ctGraph(cellRep.at(cellId), cg);
 				assert(cg.size() == cellSizes.at(cellId));
 				
-				processedBfsTreeNodes.resize(cg.size());
-				processedBfsTreeNodes.reset();
+				processedTreeNodes.resize(cg.size());
+				processedTreeNodes.reset();
 				
 				//get the face with maximum hop-distance, this is currently O(n^2)
 				cg.calcMaxHopDistance(bfsTree);
-				//set new cellRep
-				cellRep.at(cellId) = cg.face(bfsTree.front().first);
 				
-				//now split the cell by adding all faces with a maximum distance of maxDist/2 into the current cell
-				//and all remaining faces into newly connected cells
-				//the faces in bfsTree are already sorted according to the hop-distance
-				uint32_t maxHopDistance = bfsTree.back().second / 2;
-				auto bfsIt (bfsTree.begin()), bfsEnd(bfsTree.end());
-				while(bfsIt->second <= maxHopDistance) {
-					assert(!processedBfsTreeNodes.isSet(bfsIt->first));
-					processedBfsTreeNodes.set(bfsIt->first);++processedNodesCount;
-					++bfsIt;
-				}
-				//update the size of the old cell
-				cellSizes.at(cellId) = bfsIt-bfsTree.begin();
-				//bfsIt points to the first node with hopdistance > maxHopDistance
-				//reset the value of the map to assign new ids to the faces
+				uint32_t leftNode = bfsTree.front().first;
+				uint32_t rightNode = bfsTree.back().first;
 				
-				//now assign new ids to all faces that are not part of the old cell anymore
-				for(; bfsIt != bfsEnd; ++bfsIt) {
-					if (processedBfsTreeNodes.isSet(bfsIt->first)) {
-						continue;
-					}
-					//create the connected components for this cell
-					uint32_t newCellId = m_refinedCellIdToUnrefined.size();
-					uint32_t newCellSize = 0;
-					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
-					cellRep.push_back(cg.face(bfsIt->first));
-					stack.clear();
-					stack.push_back(bfsIt->first);
-					processedBfsTreeNodes.set(bfsIt->first);++processedNodesCount;
-					while(stack.size()) {
-						uint32_t nodeId = stack.back();
-						stack.pop_back();
-						const CTGraph::FaceNode & fn = cg.node(nodeId);
-						
-						m_faceToCellId[ cg.face(nodeId) ] = newCellId;
-						++newCellSize;
-						
+				uint32_t newCellId = m_refinedCellIdToUnrefined.size();
+				m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
+				
+				//set new cellReps
+				cellRep.at(cellId) = cg.face(leftNode);
+				cellRep.push_back(cg.face(rightNode));
+				
+				//set cellid of right node
+				m_faceToCellId[cg.face(rightNode)] = newCellId;
+				
+				//now assign the nodes their ids
+				processedTreeNodes.set(leftNode);
+				processedTreeNodes.set(rightNode);
+				
+				leftNodeBfs.clear();
+				rightNodeBfs.clear();
+				
+				leftNodeBfs.emplace_back(leftNode);
+				rightNodeBfs.emplace_back(rightNode);
+				
+				uint32_t oldCellSize = 1;
+				uint32_t newCellSize = 1;
+				uint32_t processedNodesCount = 2;
+				
+				for(uint32_t s(cellSizes.at(cellId)), leftNodeI(0), rightNodeI(0); processedNodesCount < s; ) {
+					//iterate over all neighbors and set their hop-distances and their repective cellid
+					//we only need to set new cellIds for the right-neighbor-cells
+					if (leftNodeI < leftNodeBfs.size()) {
+						uint32_t lfbnId = leftNodeBfs.at(leftNodeI);
+						const CTGraph::FaceNode & lfn = cg.node(lfbnId);
 						for(int i(0); i < 3; ++i) {
-							uint32_t neighborNodeId = fn.neighbours[i];
-							if (neighborNodeId != CTGraph::FaceNode::NullNeighbor && !processedBfsTreeNodes.isSet(neighborNodeId)) {
-								stack.push_back(neighborNodeId);
-								assert(!processedBfsTreeNodes.isSet(neighborNodeId));
-								processedBfsTreeNodes.set(neighborNodeId);++processedNodesCount;
+							uint32_t nid = lfn.neighbours[i];
+							if (nid != CTGraph::FaceNode::NullNeighbor && !processedTreeNodes.isSet(nid)) {
+								++processedNodesCount;
+								++oldCellSize;
+								processedTreeNodes.set(nid);
+								leftNodeBfs.emplace_back(nid);
 							}
 						}
+						++leftNodeI;
 					}
-					cellSizes.push_back(newCellSize);
+					if (rightNodeI < rightNodeBfs.size()) {
+						uint32_t rfbnId = rightNodeBfs.at(rightNodeI);
+						const CTGraph::FaceNode & rfn = cg.node(rfbnId);
+						for(int i(0); i < 3; ++i) {
+							uint32_t nid = rfn.neighbours[i];
+							if (nid != CTGraph::FaceNode::NullNeighbor && !processedTreeNodes.isSet(nid)) {
+								++processedNodesCount;
+								++newCellSize;
+								processedTreeNodes.set(nid);
+								rightNodeBfs.emplace_back(nid);
+								m_faceToCellId[cg.face(nid)] = newCellId;
+							}
+						}
+						++rightNodeI;
+					}
 				}
+				assert(newCellSize + oldCellSize == cellSizes.at(cellId));
+				cellSizes.at(cellId) = oldCellSize;
+				cellSizes.push_back(newCellSize);
+				
 				pinfo(cellId);
 				assert(processedNodesCount == cg.size());
 				
@@ -399,12 +414,12 @@ void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 	std::vector<uint32_t>::const_iterator maxElem = std::max_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
 	std::vector<uint32_t>::const_iterator minElem = std::min_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
 	
-	std::cout << "Cell Triangle stats: \n";
-	std::cout << "\tmin: " << *minElem << " at " << minElem - triangCountOfCells.begin() << "\n";
-	std::cout << "\tmax: " << *maxElem << " at " << maxElem - triangCountOfCells.begin() << "\n";
-	std::cout << "\tmedian: " << sserialize::statistics::median(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
-	std::cout << "\tmean: " << sserialize::statistics::mean(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
-	std::cout << std::flush;
+	out << "Cell Triangle stats: \n";
+	out << "\tmin: " << *minElem << " at " << minElem - triangCountOfCells.begin() << "\n";
+	out << "\tmax: " << *maxElem << " at " << maxElem - triangCountOfCells.begin() << "\n";
+	out << "\tmedian: " << sserialize::statistics::median(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
+	out << "\tmean: " << sserialize::statistics::mean(triangCountOfCells.begin()+1, triangCountOfCells.end(), 0) << "\n";
+	out << std::flush;
 }
 
 ///By definition: items that are not in any cell are in cell 0
