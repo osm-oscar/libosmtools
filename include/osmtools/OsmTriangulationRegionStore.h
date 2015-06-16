@@ -195,7 +195,8 @@ public:
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
 	~OsmTriangulationRegionStore() {}
 	void clear();
-	uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
+	inline uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
+	inline uint32_t unrefinedCellCount() const { return m_cellIdToCellList.size(); }
 	///@param cellSizeTh threshold over which a cell is split into smaller cells, pass std::numeric_limits<uint32_t>::max() to disable
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
 	template<typename TDummy>
@@ -217,6 +218,9 @@ public:
 	CellGraph cellGraph();
 	void ctGraph(const Face_handle& rfh, CTGraph& cg);
 	void cellInfo(std::vector<Face_handle> & cellRepresentatives, std::vector<uint32_t> & cellSizes);
+	
+	template<typename T_OUTPUT_ITERATOR>
+	void regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out);
 	
 	void printStats(std::ostream & out);
 };
@@ -375,6 +379,24 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	}
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
 	m_grid.initGrid(gridLatCount, gridLonCount);
+}
+
+
+template<typename T_OUTPUT_ITERATOR>
+void OsmTriangulationRegionStore::regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out) {
+	std::unordered_set<uint32_t> unrefinedMatching;
+	for(uint32_t uCellId(0), s(m_cellIdToCellList.size()); uCellId < s; ++uCellId) {
+		const RegionList & rl = m_cellIdToCellList[uCellId];
+		if (std::find(rl.begin(), rl.end(), regionId) != rl.end()) {
+			unrefinedMatching.insert(uCellId);
+		}
+	}
+	for(uint32_t cellId(0), s(m_refinedCellIdToUnrefined.size()); cellId < s; ++cellId) {
+		if (unrefinedMatching.count(m_refinedCellIdToUnrefined[cellId])) {
+			*out = cellId;
+			++out;
+		}
+	}
 }
 
 }//end namespace
