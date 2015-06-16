@@ -306,7 +306,6 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 		}
 	}
 	m_refinedCellIdToUnrefined.clear();
-	m_isRefined = true;
 	//now every cell has an id but cells that are not connected may not have different cells
 	//we now have to check for each id if the correspondig faces are all connected through cells with the same id
 	//this essential is a graph traversel to get all connected components where each face is a node and there's an edge between nodes
@@ -350,6 +349,8 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 		std::cout << "done" << std::endl;
 		std::cout << "Found " << cellId << " cells" << std::endl;
 	}
+	//all cells are connected now
+	m_isRefined = true;
 	//check if there are any cells that are too large
 	if (cellSizeTh < std::numeric_limits<uint32_t>::max()) {
 		sserialize::TimeMeasurer tm;
