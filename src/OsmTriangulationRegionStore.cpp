@@ -5,6 +5,10 @@ namespace osmtools {
 namespace detail {
 namespace OsmTriangulationRegionStore {
 
+//definitions
+constexpr uint32_t CTGraphBase::NullFace;
+constexpr uint32_t CTGraphBase::FaceNode::NullNeighbor;
+
 void CTGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > & bfsTree) {
 	struct WorkContext {
 		std::mutex lock;

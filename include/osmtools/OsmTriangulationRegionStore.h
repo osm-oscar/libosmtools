@@ -40,9 +40,9 @@ class CTGraphBase {
 private:
 	friend class osmtools::OsmTriangulationRegionStore;
 public:
-	static const uint32_t NullFace = 0xFFFFFFFF;
+	static constexpr uint32_t NullFace = 0xFFFFFFFF;
 	struct FaceNode {
-		static const uint32_t NullNeighbor = CTGraphBase::NullFace;
+		static constexpr uint32_t NullNeighbor = CTGraphBase::NullFace;
 		///by definition: if neighbours[i] == 0xFFFFFFFF => no neighbor
 		uint32_t neighbours[3];
 	};
