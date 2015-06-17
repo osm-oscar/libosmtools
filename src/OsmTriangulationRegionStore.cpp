@@ -367,9 +367,10 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 		//Stuff needed to handle the explicit dual-graph
 		CTGraph cg;
 		std::vector< std::pair<uint32_t, uint32_t> > bfsTree;
-		std::vector<uint32_t> leftNodeBfs, rightNodeBfs; //(id, hopdist)
-		SimpleBitVector processedTreeNodes;
-		std::vector<uint32_t> stack;
+		std::vector<uint32_t> hopDists;
+		std::vector<uint32_t> newFaceCellIds;
+		std::unordered_set<uint32_t> currentCells;
+		std::vector< std::pair<uint32_t, uint32_t> > stack;
 		
 		for(uint32_t round(0); true; ++round) {
 			std::cout << "Round " << round << std::endl;
@@ -381,82 +382,81 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 				if (cellSizes.at(cellId) < cellSizeTh) {
 					continue;
 				}
+				currentCells.clear();
+				newFaceCellIds.clear();
+				stack.clear();
+				hopDists.clear();
+				
+				newFaceCellIds.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
+				hopDists.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
 				
 				ctGraph(cellRep.at(cellId), cg);
 				assert(cg.size() == cellSizes.at(cellId));
 				
-				processedTreeNodes.resize(cg.size());
-				processedTreeNodes.reset();
-				
-				//get the face with maximum hop-distance, this is currently O(n^2)
 				cg.calcMaxHopDistance(bfsTree);
 				
-				uint32_t leftNode = bfsTree.front().first;
-				uint32_t rightNode = bfsTree.back().first;
+				uint32_t currentGenerator = bfsTree.front().first;
+				uint32_t currentCellId = cellId;
+				currentCells.insert(currentCellId);
 				
-				uint32_t newCellId = m_refinedCellIdToUnrefined.size();
-				m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
-				
-				//set new cellReps
-				cellRep.at(cellId) = cg.face(leftNode);
-				cellRep.push_back(cg.face(rightNode));
-				
-				//set cellid of right node
-				m_faceToCellId[cg.face(rightNode)] = newCellId;
-				
-				//now assign the nodes their ids
-				processedTreeNodes.set(leftNode);
-				processedTreeNodes.set(rightNode);
-				
-				leftNodeBfs.clear();
-				rightNodeBfs.clear();
-				
-				leftNodeBfs.emplace_back(leftNode);
-				rightNodeBfs.emplace_back(rightNode);
-				
-				uint32_t oldCellSize = 1;
-				uint32_t newCellSize = 1;
-				uint32_t processedNodesCount = 2;
-				
-				for(uint32_t s(cellSizes.at(cellId)), leftNodeI(0), rightNodeI(0); processedNodesCount < s; ) {
-					//iterate over all neighbors and set their hop-distances and their repective cellid
-					//we only need to set new cellIds for the right-neighbor-cells
-					if (leftNodeI < leftNodeBfs.size()) {
-						uint32_t lfbnId = leftNodeBfs.at(leftNodeI);
-						const CTGraph::FaceNode & lfn = cg.node(lfbnId);
-						for(int i(0); i < 3; ++i) {
-							uint32_t nid = lfn.neighbours[i];
-							if (nid != CTGraph::FaceNode::NullNeighbor && !processedTreeNodes.isSet(nid)) {
-								++processedNodesCount;
-								++oldCellSize;
-								processedTreeNodes.set(nid);
-								leftNodeBfs.emplace_back(nid);
-							}
+				bool cellsTooLarge = true;
+				while(cellsTooLarge) {
+					//do a depth-first search an mark all nodes with larger hopDists as our own node
+					stack.clear();
+					stack.emplace_back(currentGenerator, 0); //nodeId, next-neighbor to inspect
+					hopDists.at(currentGenerator) = 0;
+					newFaceCellIds.at(currentGenerator) = currentCellId;
+					while (stack.size()) {
+						while(stack.size() && stack.back().second == 3) {
+							stack.pop_back();
 						}
-						++leftNodeI;
+						if (!stack.size()) {
+							break;
+						}
+						uint32_t nextHopDist = stack.size()+1;
+						
+						std::pair<uint32_t, uint32_t> & cn = stack.back();
+						const CTGraph::FaceNode & fn = cg.node(cn.first);
+						uint32_t nid = fn.neighbours[cn.second];
+						
+						cn.second += 1;
+						if (nid != CTGraph::FaceNode::NullNeighbor && hopDists.at(nid) > nextHopDist) {
+							hopDists.at(nid) = nextHopDist;
+							newFaceCellIds.at(nid) = currentCellId;
+							stack.emplace_back(nid, 0);
+						}
 					}
-					if (rightNodeI < rightNodeBfs.size()) {
-						uint32_t rfbnId = rightNodeBfs.at(rightNodeI);
-						const CTGraph::FaceNode & rfn = cg.node(rfbnId);
-						for(int i(0); i < 3; ++i) {
-							uint32_t nid = rfn.neighbours[i];
-							if (nid != CTGraph::FaceNode::NullNeighbor && !processedTreeNodes.isSet(nid)) {
-								++processedNodesCount;
-								++newCellSize;
-								processedTreeNodes.set(nid);
-								rightNodeBfs.emplace_back(nid);
-								m_faceToCellId[cg.face(nid)] = newCellId;
-							}
+					
+					for(uint32_t x : currentCells) {
+						cellSizes.at(x) = 0;
+					}
+					for(uint32_t & x : newFaceCellIds) {
+						cellSizes.at(x) += 1;
+					}
+					cellsTooLarge = false;
+					for(uint32_t x : currentCells) {
+						if (cellSizes.at(x) > cellSizeTh) {
+							cellsTooLarge = true;
+							break;
 						}
-						++rightNodeI;
+					}
+					if (cellsTooLarge) {//find a new generator
+						std::vector<uint32_t>::const_iterator maxElem = std::max_element(hopDists.begin(), hopDists.end());
+						currentGenerator = maxElem - hopDists.begin();
+						currentCellId = m_refinedCellIdToUnrefined.size();
+						m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
+						cellSizes.push_back(0);
+						currentCells.insert(currentCellId);
+						cellRep.push_back(cg.face(currentGenerator));
 					}
 				}
-				assert(newCellSize + oldCellSize == cellSizes.at(cellId));
-				cellSizes.at(cellId) = oldCellSize;
-				cellSizes.push_back(newCellSize);
+				//cellSizes are correctly set, assign faces the new ids
+				for(uint32_t nodeId(0), s(cg.size()); nodeId < s; ++nodeId) {
+					assert(newFaceCellIds.at(nodeId) != std::numeric_limits<uint32_t>::max());
+					m_faceToCellId[cg.face(nodeId)] = newFaceCellIds.at(nodeId);
+				}
 				
 				pinfo(cellId);
-				assert(processedNodesCount == cg.size());
 				
 #if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
 		{
