@@ -202,7 +202,10 @@ public:
 	template<typename TDummy>
 	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t threadCount);
 	///clears the refinement and recreates it with the new values
-	void refineCells(uint32_t cellSizeTh, uint32_t threadCount);
+	///First splits the cells into connected cells, then splits these connected cells into smaller cells if they are larger than cellSizeTh
+	///This is done in multiple runs where each cell is split into up to numVoronoiSplitRuns smaller cells until each cell is smaller than cellSizeTh
+	///cells are not split into equally sized cells but rather by their voronoi diagram
+	void refineCells(uint32_t cellSizeTh, uint32_t numVoronoiSplitRuns, uint32_t threadCount);
 	void clearRefinement();
 	inline uint32_t unrefinedCellId(uint32_t cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
 	uint32_t cellId(double lat, double lon);

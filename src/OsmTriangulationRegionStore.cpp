@@ -302,7 +302,8 @@ void OsmTriangulationRegionStore::clearRefinement() {
 	m_isRefined = false;
 }
 
-void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t threadCount) {
+void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t numVoronoiSplitRuns, uint32_t threadCount) {
+	numVoronoiSplitRuns = std::max<uint32_t>(numVoronoiSplitRuns, 2);
 	//first clear the old refinement
 	for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
 		if (m_faceToCellId.is_defined(it)) {
@@ -382,6 +383,19 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 				if (cellSizes.at(cellId) < cellSizeTh) {
 					continue;
 				}
+				#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
+				{
+					assert(cellSizes.size() == cellCount());
+					std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+					for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+						uint32_t fid = this->cellId(it);
+						triangCountOfCells.at(fid) += 1;
+					}
+					for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+						assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+					}
+				}
+				#endif
 				currentCells.clear();
 				newFaceCellIds.clear();
 				stack.clear();
@@ -390,6 +404,9 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 				newFaceCellIds.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
 				hopDists.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
 				
+				assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
+				uint32_t mpt = m_faceToCellId[cellRep.at(cellId)];
+				assert(m_faceToCellId[cellRep.at(cellId)] == cellId);
 				ctGraph(cellRep.at(cellId), cg);
 				assert(cg.size() == cellSizes.at(cellId));
 				
@@ -397,11 +414,12 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 				
 				uint32_t currentGenerator = bfsTree.front().first;
 				uint32_t currentCellId = cellId;
+				cellRep.at(cellId) = cg.face(currentGenerator);
 				currentCells.insert(currentCellId);
 				
 				bool cellsTooLarge = true;
-				while(cellsTooLarge) {
-					//do a depth-first search an mark all nodes with larger hopDists as our own node
+				for(uint32_t voronoiSplitRun(0); voronoiSplitRun < numVoronoiSplitRuns && cellsTooLarge; ++voronoiSplitRun) {
+					//do a depth-first search and mark all nodes with larger hopDists as our own node
 					stack.clear();
 					stack.emplace_back(currentGenerator, 0); //nodeId, next-neighbor to inspect
 					hopDists.at(currentGenerator) = 0;
@@ -413,7 +431,7 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 						if (!stack.size()) {
 							break;
 						}
-						uint32_t nextHopDist = stack.size()+1;
+						uint32_t nextHopDist = stack.size();
 						
 						std::pair<uint32_t, uint32_t> & cn = stack.back();
 						const CTGraph::FaceNode & fn = cg.node(cn.first);
@@ -425,6 +443,7 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 							newFaceCellIds.at(nid) = currentCellId;
 							stack.emplace_back(nid, 0);
 						}
+						assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
 					}
 					
 					for(uint32_t x : currentCells) {
@@ -435,12 +454,13 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 					}
 					cellsTooLarge = false;
 					for(uint32_t x : currentCells) {
+						assert(cellSizes.at(x));
 						if (cellSizes.at(x) > cellSizeTh) {
 							cellsTooLarge = true;
 							break;
 						}
 					}
-					if (cellsTooLarge) {//find a new generator
+					if (cellsTooLarge && voronoiSplitRun+1 < numVoronoiSplitRuns) {//find a new generator
 						std::vector<uint32_t>::const_iterator maxElem = std::max_element(hopDists.begin(), hopDists.end());
 						currentGenerator = maxElem - hopDists.begin();
 						currentCellId = m_refinedCellIdToUnrefined.size();
@@ -449,29 +469,31 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 						currentCells.insert(currentCellId);
 						cellRep.push_back(cg.face(currentGenerator));
 					}
-				}
+				}//end for-loop voronoi-split run
+				assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
 				//cellSizes are correctly set, assign faces the new ids
 				for(uint32_t nodeId(0), s(cg.size()); nodeId < s; ++nodeId) {
 					assert(newFaceCellIds.at(nodeId) != std::numeric_limits<uint32_t>::max());
 					m_faceToCellId[cg.face(nodeId)] = newFaceCellIds.at(nodeId);
 				}
+				assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
 				
 				pinfo(cellId);
 				
-#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
-		{
-			assert(cellSizes.size() == cellCount());
-			std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
-			for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-				uint32_t fid = this->cellId(it);
-				triangCountOfCells.at(fid) += 1;
-			}
-			for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-				assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-			}
-		}
-#endif
-			}
+				#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
+				{
+					assert(cellSizes.size() == cellCount());
+					std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+					for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+						uint32_t fid = this->cellId(it);
+						triangCountOfCells.at(fid) += 1;
+					}
+					for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+						assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+					}
+				}
+				#endif
+			}//end for-loop cell-loop
 			pinfo.end();
 			assert(cellRep.size() == cellSizes.size());
 			assert(cellRep.size() == m_refinedCellIdToUnrefined.size());
@@ -479,7 +501,7 @@ void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t thre
 			if (prevCellIdCount == cellRep.size()) {
 				break;
 			}
-		}
+		}//end for-loop split rounds
 		tm.end();
 		std::cout << "Took " << tm << " to split the cells" << std::endl;
 		std::cout << "Found " << m_refinedCellIdToUnrefined.size() << " cells" << std::endl;
