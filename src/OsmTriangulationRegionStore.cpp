@@ -162,7 +162,7 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 	uint32_t myCellId = m_faceToCellId[rfh];
 	cg.m_cellId = myCellId;
 	
-	if (m_isRefined) {
+	if (m_isConnected) {
 		cgFaces.push_back(rfh);
 		faceToNodeId[rfh] = 0;
 		for(uint32_t i(0); i < cgFaces.size(); ++i) {
@@ -299,230 +299,241 @@ void OsmTriangulationRegionStore::clearRefinement() {
 	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
-	m_isRefined = false;
+	m_isConnected = false;
 }
 
-void OsmTriangulationRegionStore::refineCells(uint32_t cellSizeTh, uint32_t numVoronoiSplitRuns, uint32_t threadCount) {
-	numVoronoiSplitRuns = std::max<uint32_t>(numVoronoiSplitRuns, 2);
-	//first clear the old refinement
-	for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-		if (m_faceToCellId.is_defined(it)) {
-			m_faceToCellId[it] = m_refinedCellIdToUnrefined.at(m_faceToCellId[it]);
-		}
+void OsmTriangulationRegionStore::makeConnected() {
+	if (m_isConnected) {
+		return;
 	}
-	m_refinedCellIdToUnrefined.clear();
-	//now every cell has an id but cells that are not connected may not have different cells
+	//Every cell has an id but cells that are not connected may not have different cells
 	//we now have to check for each id if the correspondig faces are all connected through cells with the same id
 	//this essential is a graph traversel to get all connected components where each face is a node and there's an edge between nodes
 	//if their correspondig faces are neighbours and share the same id
+
+	m_refinedCellIdToUnrefined.clear();
+	
 	std::cout << "Refining cells..." << std::flush;
-	{
-		FaceCellIdMap tmp;
-		std::vector<Face_handle> stack;
-		uint32_t cellId = 1; //faces that are not in any region are in cellid 0, no need to refine them
-		m_refinedCellIdToUnrefined.push_back(0);
-		for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
-			Face_handle rfh = it;
-			if (tmp.is_defined(rfh)) {
+	FaceCellIdMap tmp;
+	std::vector<Face_handle> stack;
+	uint32_t cellId = 1; //faces that are not in any region are in cellid 0, no need to refine them
+	m_refinedCellIdToUnrefined.push_back(0);
+	for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
+		Face_handle rfh = it;
+		if (tmp.is_defined(rfh)) {
+			continue;
+		}
+		//a new connected component is going to be created
+		stack.push_back(rfh);
+		while(stack.size()) {
+			Face_handle fh = stack.back();
+			stack.pop_back();
+			if (tmp.is_defined(fh)) {
 				continue;
 			}
-			//a new connected component is going to be created
-			stack.push_back(rfh);
-			while(stack.size()) {
-				Face_handle fh = stack.back();
-				stack.pop_back();
-				if (tmp.is_defined(fh)) {
-					continue;
-				}
-				tmp[fh] = cellId;
-				assert(m_faceToCellId.is_defined(fh));
-				uint32_t fhId = m_faceToCellId[fh];
-				for(int i=0; i < 3; ++i) {
-					Face_handle nfh = fh->neighbor(i);
-					if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == fhId && !tmp.is_defined(nfh)) {
-						stack.push_back(nfh);
-					}
+			tmp[fh] = cellId;
+			assert(m_faceToCellId.is_defined(fh));
+			uint32_t fhId = m_faceToCellId[fh];
+			for(int i=0; i < 3; ++i) {
+				Face_handle nfh = fh->neighbor(i);
+				if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == fhId && !tmp.is_defined(nfh)) {
+					stack.push_back(nfh);
 				}
 			}
-			
-			stack.clear();
-			m_refinedCellIdToUnrefined.push_back(m_faceToCellId[rfh]);
-			++cellId;
 		}
-		assert(cellId == m_refinedCellIdToUnrefined.size());
-		m_faceToCellId = std::move(tmp);
-		std::cout << "done" << std::endl;
-		std::cout << "Found " << cellId << " cells" << std::endl;
-	}
-	//all cells are connected now
-	m_isRefined = true;
-	//check if there are any cells that are too large
-	if (cellSizeTh < std::numeric_limits<uint32_t>::max()) {
-		sserialize::TimeMeasurer tm;
-		tm.begin();
-		std::cout << "Splitting cells larger than " << cellSizeTh << " triangles" << std::endl;
-		std::vector<uint32_t> cellSizes;
-		std::vector<Face_handle> cellRep;
-		cellInfo(cellRep, cellSizes);
-
-		//Stuff needed to handle the explicit dual-graph
-		CTGraph cg;
-		std::vector< std::pair<uint32_t, uint32_t> > bfsTree;
-		std::vector<uint32_t> hopDists;
-		std::vector<uint32_t> newFaceCellIds;
-		std::unordered_set<uint32_t> currentCells;
-		std::vector< std::pair<uint32_t, uint32_t> > stack;
 		
-		for(uint32_t round(0); true; ++round) {
-			std::cout << "Round " << round << std::endl;
-			uint32_t prevCellIdCount = cellRep.size();
-			//skipt cellId=0 since that is the infinite_face
-			sserialize::ProgressInfo pinfo;
-			pinfo.begin(cellRep.size(), "Splitting");
-			for(uint32_t cellId(1); cellId < cellRep.size(); ++cellId) {
-				if (cellSizes.at(cellId) < cellSizeTh) {
-					continue;
-				}
-				#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
-				{
-					assert(cellSizes.size() == cellCount());
-					std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
-					for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-						uint32_t fid = this->cellId(it);
-						triangCountOfCells.at(fid) += 1;
-					}
-					for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-						assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-					}
-				}
-				#endif
-				currentCells.clear();
-				newFaceCellIds.clear();
-				stack.clear();
-				hopDists.clear();
-				
-				newFaceCellIds.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
-				hopDists.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
-				
-				assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
-				uint32_t mpt = m_faceToCellId[cellRep.at(cellId)];
-				assert(m_faceToCellId[cellRep.at(cellId)] == cellId);
-				ctGraph(cellRep.at(cellId), cg);
-				assert(cg.size() == cellSizes.at(cellId));
-				
-				cg.calcMaxHopDistance(bfsTree);
-				
-				uint32_t currentGenerator = bfsTree.front().first;
-				uint32_t currentCellId = cellId;
-				cellRep.at(cellId) = cg.face(currentGenerator);
-				currentCells.insert(currentCellId);
-				
-				bool cellsTooLarge = true;
-				for(uint32_t voronoiSplitRun(0); voronoiSplitRun < numVoronoiSplitRuns && cellsTooLarge; ++voronoiSplitRun) {
-					//do a depth-first search and mark all nodes with larger hopDists as our own node
-					stack.clear();
-					stack.emplace_back(currentGenerator, 0); //nodeId, next-neighbor to inspect
-					hopDists.at(currentGenerator) = 0;
-					newFaceCellIds.at(currentGenerator) = currentCellId;
-					while (stack.size()) {
-						while(stack.size() && stack.back().second == 3) {
-							stack.pop_back();
-						}
-						if (!stack.size()) {
-							break;
-						}
-						uint32_t nextHopDist = stack.size();
-						
-						std::pair<uint32_t, uint32_t> & cn = stack.back();
-						const CTGraph::FaceNode & fn = cg.node(cn.first);
-						uint32_t nid = fn.neighbours[cn.second];
-						
-						cn.second += 1;
-						if (nid != CTGraph::FaceNode::NullNeighbor && hopDists.at(nid) > nextHopDist) {
-							hopDists.at(nid) = nextHopDist;
-							newFaceCellIds.at(nid) = currentCellId;
-							stack.emplace_back(nid, 0);
-						}
-						assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
-					}
-					
-					for(uint32_t x : currentCells) {
-						cellSizes.at(x) = 0;
-					}
-					for(uint32_t & x : newFaceCellIds) {
-						cellSizes.at(x) += 1;
-					}
-					cellsTooLarge = false;
-					for(uint32_t x : currentCells) {
-						assert(cellSizes.at(x));
-						if (cellSizes.at(x) > cellSizeTh) {
-							cellsTooLarge = true;
-							break;
-						}
-					}
-					if (cellsTooLarge && voronoiSplitRun+1 < numVoronoiSplitRuns) {//find a new generator
-						std::vector<uint32_t>::const_iterator maxElem = std::max_element(hopDists.begin(), hopDists.end());
-						currentGenerator = maxElem - hopDists.begin();
-						currentCellId = m_refinedCellIdToUnrefined.size();
-						m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
-						cellSizes.push_back(0);
-						currentCells.insert(currentCellId);
-						cellRep.push_back(cg.face(currentGenerator));
-					}
-				}//end for-loop voronoi-split run
-				assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
-				//cellSizes are correctly set, assign faces the new ids
-				for(uint32_t nodeId(0), s(cg.size()); nodeId < s; ++nodeId) {
-					assert(newFaceCellIds.at(nodeId) != std::numeric_limits<uint32_t>::max());
-					m_faceToCellId[cg.face(nodeId)] = newFaceCellIds.at(nodeId);
-				}
-				assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
-				
-				pinfo(cellId);
-				
-				#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
-				{
-					assert(cellSizes.size() == cellCount());
-					std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
-					for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-						uint32_t fid = this->cellId(it);
-						triangCountOfCells.at(fid) += 1;
-					}
-					for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-						assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-					}
-				}
-				#endif
-			}//end for-loop cell-loop
-			pinfo.end();
-			assert(cellRep.size() == cellSizes.size());
-			assert(cellRep.size() == m_refinedCellIdToUnrefined.size());
-			//if no new cell was created then all cells are smaller than cellSizeTh
-			if (prevCellIdCount == cellRep.size()) {
-				break;
+		stack.clear();
+		m_refinedCellIdToUnrefined.push_back(m_faceToCellId[rfh]);
+		++cellId;
+	}
+	assert(cellId == m_refinedCellIdToUnrefined.size());
+	m_faceToCellId = std::move(tmp);
+	std::cout << "done" << std::endl;
+	std::cout << "Found " << cellId << " cells" << std::endl;
+	
+	
+	m_isConnected = true;
+}
+
+
+void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t /*threadCount*/) {
+	if (cellSizeTh > m_grid.tds().number_of_faces()) {
+		return;
+	}
+	
+	splitPerRun = std::max<uint32_t>(splitPerRun, 2);
+	
+	makeConnected();
+	//all cells are connected now
+
+	//check if there are any cells that are too large
+	sserialize::TimeMeasurer tm;
+	tm.begin();
+	std::cout << "Splitting cells larger than " << cellSizeTh << " triangles" << std::endl;
+	std::vector<uint32_t> cellSizes;
+	std::vector<Face_handle> cellRep;
+	cellInfo(cellRep, cellSizes);
+
+	//Stuff needed to handle the explicit dual-graph
+	CTGraph cg;
+	std::vector< std::pair<uint32_t, uint32_t> > bfsTree;
+	std::vector<uint32_t> hopDists;
+	std::vector<uint32_t> newFaceCellIds;
+	std::unordered_set<uint32_t> currentCells;
+	std::vector< std::pair<uint32_t, uint32_t> > stack;
+	
+	for(uint32_t round(0); round < runs; ++round) {
+		std::cout << "Round " << round << std::endl;
+		uint32_t prevCellIdCount = cellRep.size();
+		//skipt cellId=0 since that is the infinite_face
+		sserialize::ProgressInfo pinfo;
+		pinfo.begin(cellRep.size(), "Splitting");
+		for(uint32_t cellId(1), cellIdInitialSize(cellRep.size()); cellId < cellIdInitialSize; ++cellId) {
+			if (cellSizes.at(cellId) < cellSizeTh) {
+				continue;
 			}
-		}//end for-loop split rounds
-		tm.end();
-		std::cout << "Took " << tm << " to split the cells" << std::endl;
-		std::cout << "Found " << m_refinedCellIdToUnrefined.size() << " cells" << std::endl;
+			#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
+			{
+				assert(cellSizes.size() == cellCount());
+				std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+				for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+					uint32_t fid = this->cellId(it);
+					triangCountOfCells.at(fid) += 1;
+				}
+				for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+					assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+				}
+			}
+			#endif
+			currentCells.clear();
+			newFaceCellIds.clear();
+			stack.clear();
+			hopDists.clear();
+			
+			newFaceCellIds.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
+			hopDists.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
+			
+			assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
+// 			uint32_t mpt = m_faceToCellId[cellRep.at(cellId)];
+			assert(m_faceToCellId[cellRep.at(cellId)] == cellId);
+			ctGraph(cellRep.at(cellId), cg);
+			assert(cg.size() == cellSizes.at(cellId));
+			
+			cg.calcMaxHopDistance(bfsTree);
+			
+			uint32_t currentGenerator = bfsTree.front().first;
+			uint32_t currentCellId = cellId;
+			cellRep.at(cellId) = cg.face(currentGenerator);
+			currentCells.insert(currentCellId);
+			
+			bool cellsTooLarge = true;
+			for(uint32_t voronoiSplitRun(0); voronoiSplitRun < splitPerRun && cellsTooLarge; ++voronoiSplitRun) {
+				//do a depth-first search and mark all nodes with larger hopDists as our own node
+				stack.clear();
+				stack.emplace_back(currentGenerator, 0); //nodeId, next-neighbor to inspect
+				hopDists.at(currentGenerator) = 0;
+				newFaceCellIds.at(currentGenerator) = currentCellId;
+				while (stack.size()) {
+					while(stack.size() && stack.back().second == 3) {
+						stack.pop_back();
+					}
+					if (!stack.size()) {
+						break;
+					}
+					uint32_t nextHopDist = stack.size();
+					
+					std::pair<uint32_t, uint32_t> & cn = stack.back();
+					const CTGraph::FaceNode & fn = cg.node(cn.first);
+					uint32_t nid = fn.neighbours[cn.second];
+					
+					cn.second += 1;
+					if (nid != CTGraph::FaceNode::NullNeighbor && hopDists.at(nid) > nextHopDist) {
+						hopDists.at(nid) = nextHopDist;
+						newFaceCellIds.at(nid) = currentCellId;
+						stack.emplace_back(nid, 0);
+					}
+					assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
+				}
+				
+				for(uint32_t x : currentCells) {
+					cellSizes.at(x) = 0;
+				}
+				for(uint32_t & x : newFaceCellIds) {
+					cellSizes.at(x) += 1;
+				}
+				cellsTooLarge = false;
+				for(uint32_t x : currentCells) {
+					assert(cellSizes.at(x));
+					if (cellSizes.at(x) > cellSizeTh) {
+						cellsTooLarge = true;
+						break;
+					}
+				}
+				if (cellsTooLarge && voronoiSplitRun+1 < splitPerRun) {//find a new generator
+					std::vector<uint32_t>::const_iterator maxElem = std::max_element(hopDists.begin(), hopDists.end());
+					currentGenerator = maxElem - hopDists.begin();
+					currentCellId = m_refinedCellIdToUnrefined.size();
+					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
+					cellSizes.push_back(0);
+					currentCells.insert(currentCellId);
+					cellRep.push_back(cg.face(currentGenerator));
+				}
+			}//end for-loop voronoi-split run
+			assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
+			assert(currentCells.size() <= splitPerRun);
+			//cellSizes are correctly set, assign faces the new ids
+			for(uint32_t nodeId(0), s(cg.size()); nodeId < s; ++nodeId) {
+				assert(newFaceCellIds.at(nodeId) != std::numeric_limits<uint32_t>::max());
+				m_faceToCellId[cg.face(nodeId)] = newFaceCellIds.at(nodeId);
+			}
+			assert(m_faceToCellId.is_defined(cellRep.at(cellId)) && m_faceToCellId[cellRep.at(cellId)] == cellId);
+			
+			pinfo(cellId);
+			
+			#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
+			{
+				assert(cellSizes.size() == cellCount());
+				std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+				for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+					uint32_t fid = this->cellId(it);
+					triangCountOfCells.at(fid) += 1;
+				}
+				for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+					assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+				}
+			}
+			#endif
+		}//end for-loop cell-loop
+		pinfo.end();
+		assert(cellRep.size() == cellSizes.size());
+		assert(cellRep.size() == m_refinedCellIdToUnrefined.size());
+		//if no new cell was created then all cells are smaller than cellSizeTh
+		if (prevCellIdCount == cellRep.size()) {
+			break;
+		}
+	}//end for-loop split rounds
+	tm.end();
+	std::cout << "Took " << tm << " to split the cells" << std::endl;
+	std::cout << "Found " << m_refinedCellIdToUnrefined.size() << " cells" << std::endl;
 #if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
+	if (runs == 0xFFFFFFFF) {
 		for(uint32_t x : cellSizes) {
 			assert(x <= cellSizeTh);
 		}
-		{
-			assert(cellSizes.size() == cellCount());
-			std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
-			for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-				uint32_t fid = cellId(it);
-				triangCountOfCells.at(fid) += 1;
-			}
-			for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-				assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-				assert(triangCountOfCells.at(cellId) <= cellSizeTh && (cellId == 0 || triangCountOfCells.at(cellId)));
-			}
-		}
-#endif
 	}
+	{
+		assert(cellSizes.size() == cellCount());
+		std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
+		for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+			uint32_t fid = cellId(it);
+			triangCountOfCells.at(fid) += 1;
+		}
+		for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
+			assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+			assert((runs != 0xFFFFFFFF || triangCountOfCells.at(cellId) <= cellSizeTh) && (cellId == 0 || triangCountOfCells.at(cellId)));
+		}
+	}
+#endif
 }
 
 void OsmTriangulationRegionStore::printStats(std::ostream& out) {

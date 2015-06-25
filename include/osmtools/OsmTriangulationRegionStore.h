@@ -161,6 +161,9 @@ public:
 		using CTGraphBase::node;
 	};
 	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
+	struct NoRefinementTriangleRefiner {
+		bool operator()(const Face_handle & /*fh*/) { return false; }
+	};
 public:
 	static constexpr uint32_t InfiniteFaceId = 0xFFFFFFFF;
 private:
@@ -188,7 +191,7 @@ private:
 	RegionListContainer m_cellLists;
 	std::vector<RegionList> m_cellIdToCellList;
 	std::vector<uint32_t> m_refinedCellIdToUnrefined;
-	bool m_isRefined;
+	bool m_isConnected;
 	std::mutex m_lock;
 public:
 	OsmTriangulationRegionStore() {}
@@ -197,15 +200,19 @@ public:
 	void clear();
 	inline uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
 	inline uint32_t unrefinedCellCount() const { return m_cellIdToCellList.size(); }
-	///@param cellSizeTh threshold over which a cell is split into smaller cells, pass std::numeric_limits<uint32_t>::max() to disable
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
-	template<typename TDummy>
-	void init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t threadCount);
-	///clears the refinement and recreates it with the new values
-	///First splits the cells into connected cells, then splits these connected cells into smaller cells if they are larger than cellSizeTh
+	///@param triangRefiner bool operator()(const Face_handle & fh); selects if a triang should be refined
+	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::NoRefinementTriangleRefiner>
+	void init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER triangRefiner = T_TRIANG_REFINER());
+	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount) { m_grid.initGrid(gridLatCount, gridLonCount); }
+
+	void makeConnected();
+	///Splits cells into connected cells into smaller cells if they are larger than cellSizeTh
 	///This is done in multiple runs where each cell is split into up to numVoronoiSplitRuns smaller cells until each cell is smaller than cellSizeTh
 	///cells are not split into equally sized cells but rather by their voronoi diagram
-	void refineCells(uint32_t cellSizeTh, uint32_t numVoronoiSplitRuns, uint32_t threadCount);
+	///refine cells by connectedness so that all cells form a connected polygon (with holes)
+	void refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
+	
 	void clearRefinement();
 	inline uint32_t unrefinedCellId(uint32_t cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
 	uint32_t cellId(double lat, double lon);
@@ -229,8 +236,8 @@ public:
 };
 
 
-template<typename TDummy>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t gridLatCount, uint32_t gridLonCount, uint32_t threadCount) {
+template<typename TDummy, typename T_TRIANG_REFINER>
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER /*triangRefiner*/) {
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
@@ -287,7 +294,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		m_grid.tds().insert_constraints(pts.cbegin(), pts.cend(), segments.cbegin(), segments.cend());
 		std::cout << "done" << std::endl;
 	}
-	
 	
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
@@ -375,13 +381,17 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		for(const auto & x : ctx.cellListToCellId) {
 			m_cellIdToCellList.at(x.second) = x.first;
 		}
+		
+		//now refine alle triangles that are too large by splitting them with their centroid
+		//we only do this for triangles contained in regions
+		//all other triangles
+		
 	}
 	m_refinedCellIdToUnrefined.reserve(m_cellIdToCellList.size());
 	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
-	m_grid.initGrid(gridLatCount, gridLonCount);
 }
 
 
