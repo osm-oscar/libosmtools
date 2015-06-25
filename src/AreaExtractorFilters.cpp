@@ -66,13 +66,13 @@ generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(Extracti
 	{//set the relation filter
 		osmpbf::AbstractTagFilter * multiPolyFilter;
 		if (extractionTypes & ET_MULTIPOLYGONS) {
-			multiPolyFilter = new osmpbf::MultiStringTagFilter("type", {"multipoly", "multipolygon"});
+			multiPolyFilter = new osmpbf::KeyMultiValueTagFilter("type", {"multipoly", "multipolygon"});
 		}
 		else {
-			multiPolyFilter = osmpbf::newAnd(new osmpbf::MultiStringTagFilter("type", {"multipoly", "multipolygon"}), areaFilter.get());
+			multiPolyFilter = osmpbf::newAnd(new osmpbf::KeyMultiValueTagFilter("type", {"multipoly", "multipolygon"}), areaFilter.get());
 		}
 		if (extractionTypes & ET_BOUNDARIES) {
-			relationFilter->addChild( osmpbf::newOr(new osmpbf::StringTagFilter("type", "boundary"), multiPolyFilter) );
+			relationFilter->addChild( osmpbf::newOr(new osmpbf::KeyValueTagFilter("type", "boundary"), multiPolyFilter) );
 		}
 		else {
 			relationFilter->addChild(multiPolyFilter);
