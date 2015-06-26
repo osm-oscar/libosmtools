@@ -11,24 +11,32 @@ class GridLocator {
 public:
 	typedef TDs TriangulationDataStructure;
 	typedef typename TDs::Face_handle Face_handle;
+	typedef sserialize::spatial::RWGeoGrid<Face_handle> Grid;
 private:
-	typedef typename TDs::Triangulation::Geom_traits::Point_2 Point_2;
+	typedef typename TriangulationDataStructure::Triangulation::Geom_traits::Point_2 Point_2;
 private:
-	TDs m_tds;
+	TriangulationDataStructure m_tds;
 	sserialize::spatial::RWGeoGrid<Face_handle> m_grid;
 public:
 	GridLocator() {}
 	void initGrid(uint32_t latCount, uint32_t lonCount);
-	TDs & tds() { return m_tds; }
-	const TDs & tds() const { return m_tds; }
+	inline TriangulationDataStructure & tds() { return m_tds; }
+	inline const TriangulationDataStructure & tds() const { return m_tds; }
+	inline Grid & grid() { return m_grid; }
+	inline const Grid & grid() const { return m_grid; }
 	///@thread-safety NO
 	Face_handle locate(double x, double y) const;
+	inline bool contains(double lat, double lon) { return m_grid.contains(lat, lon); }
 };
 
 
 template<typename TDs>
 void
 GridLocator<TDs>::initGrid(uint32_t latCount, uint32_t lonCount) {
+	assert(tds().number_of_vertices());
+	if (!tds().number_of_vertices()) {
+		return;
+	}
 	{
 		sserialize::AtomicMinMax<double> lat, lon;
 		for(auto it(m_tds.finite_vertices_begin()), end(m_tds.finite_vertices_end()); it != end; ++it) {

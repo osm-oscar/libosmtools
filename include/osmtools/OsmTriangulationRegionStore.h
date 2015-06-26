@@ -145,6 +145,7 @@ public:
 	typedef sserialize::MMVector<uint32_t> RegionListContainer;
 	typedef sserialize::CFLArray<RegionListContainer> RegionList;
 	typedef GridLocator::TriangulationDataStructure::Finite_faces_iterator Finite_faces_iterator;
+	typedef GridLocator::TriangulationDataStructure::All_faces_iterator All_faces_iterator;
 	typedef detail::OsmTriangulationRegionStore::SimpleBitVector SimpleBitVector;
 public:
 	class CTGraph: public detail::OsmTriangulationRegionStore::CTGraphBase {
@@ -165,7 +166,7 @@ public:
 		bool operator()(const Face_handle & /*fh*/) { return false; }
 	};
 public:
-	static constexpr uint32_t InfiniteFaceId = 0xFFFFFFFF;
+	static constexpr uint32_t InfiniteFacesCellId = 0xFFFFFFFF;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -193,6 +194,8 @@ private:
 	std::vector<uint32_t> m_refinedCellIdToUnrefined;
 	bool m_isConnected;
 	std::mutex m_lock;
+private:
+	void setInfinteFacesCellIds();
 public:
 	OsmTriangulationRegionStore() {}
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
@@ -204,7 +207,7 @@ public:
 	///@param triangRefiner bool operator()(const Face_handle & fh); selects if a triang should be refined
 	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::NoRefinementTriangleRefiner>
 	void init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER triangRefiner = T_TRIANG_REFINER());
-	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount) { m_grid.initGrid(gridLatCount, gridLonCount); }
+	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
 
 	void makeConnected();
 	///Splits cells into connected cells into smaller cells if they are larger than cellSizeTh
@@ -233,6 +236,8 @@ public:
 	void regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out);
 	
 	void printStats(std::ostream & out);
+	
+	bool selfTest();
 };
 
 
@@ -241,7 +246,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
-
 	{
 		//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
 		//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
@@ -318,8 +322,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		ctx.facesIt = m_grid.tds().finite_faces_begin();
 		ctx.facesEnd = m_grid.tds().finite_faces_end();
 		
-		//set the infinite_face to cellId=0xFFFFFFFF
-		m_faceToCellId[m_grid.tds().infinite_face()] = InfiniteFaceId;
+		setInfinteFacesCellIds();
 		//cells that are not in any region get cellid 0
 		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
 		
@@ -392,6 +395,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
+	assert(selfTest());
 }
 
 

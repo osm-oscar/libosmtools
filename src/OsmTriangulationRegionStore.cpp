@@ -219,7 +219,7 @@ OsmTriangulationRegionStore::CellGraph OsmTriangulationRegionStore::cellGraph() 
 				Face_handle nfh = fh->neighbor(j);
 				if (m_faceToCellId.is_defined(nfh)) {
 					uint32_t oCellId = m_faceToCellId[nfh];
-					if (oCellId != myCellId && oCellId != InfiniteFaceId) {
+					if (oCellId != myCellId && oCellId != InfiniteFacesCellId) {
 						tmp.emplace(myCellId, oCellId);
 					}
 				}
@@ -274,6 +274,22 @@ hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CG
 	}
 }
 
+void OsmTriangulationRegionStore::setInfinteFacesCellIds() {
+	//set all infinte faces to cellId=0xFFFFFFFF
+	for(All_faces_iterator it(m_grid.tds().all_faces_begin()), end(m_grid.tds().all_faces_end()); it != end; ++it) {
+		if (m_grid.tds().is_infinite(it)) {
+			m_faceToCellId[it] = InfiniteFacesCellId;
+		}
+	}
+	//the following should be eqauivalent but isn't. Why?
+// 	Triangulation::Face_circulator ifcBegin(m_grid.tds().incident_faces(m_grid.tds().infinite_vertex()));
+// 	Triangulation::Face_circulator ifcEnd(ifcBegin);
+// 	for(; ifcBegin != ifcEnd; ++ifcBegin) {
+// 		m_faceToCellId[ifcBegin] = InfiniteFacesCellId;
+// 	}
+}
+
+
 uint32_t OsmTriangulationRegionStore::cellId(const OsmTriangulationRegionStore::Face_handle& fh) {
 	if (m_faceToCellId.is_defined(fh)) {
 		return m_faceToCellId[fh];
@@ -300,6 +316,12 @@ void OsmTriangulationRegionStore::clearRefinement() {
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	m_isConnected = false;
+	assert(selfTest());
+}
+
+void OsmTriangulationRegionStore::initGrid(uint32_t gridLatCount, uint32_t gridLonCount) {
+	m_grid.initGrid(gridLatCount, gridLonCount);
+	assert(selfTest());
 }
 
 void OsmTriangulationRegionStore::makeConnected() {
@@ -348,11 +370,13 @@ void OsmTriangulationRegionStore::makeConnected() {
 	}
 	assert(cellId == m_refinedCellIdToUnrefined.size());
 	m_faceToCellId = std::move(tmp);
+	setInfinteFacesCellIds();
+	
 	std::cout << "done" << std::endl;
 	std::cout << "Found " << cellId << " cells" << std::endl;
 	
-	
 	m_isConnected = true;
+	assert(selfTest());
 }
 
 
@@ -534,6 +558,7 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 		}
 	}
 #endif
+	assert(selfTest());
 }
 
 void OsmTriangulationRegionStore::printStats(std::ostream& out) {
@@ -559,18 +584,44 @@ void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 
 ///By definition: items that are not in any cell are in cell 0
 uint32_t OsmTriangulationRegionStore::cellId(double lat, double lon) {
-	std::unique_lock<std::mutex> lck(m_lock);
-	Face_handle fh = m_grid.locate(lat, lon);
-	if (fh->is_valid() && m_faceToCellId.is_defined(fh)) {
-		return m_faceToCellId[fh];
+	uint32_t cellId;
+	if (m_grid.contains(lat, lon)) {
+		std::unique_lock<std::mutex> lck(m_lock);
+		Face_handle fh = m_grid.locate(lat, lon);
+		assert(m_faceToCellId.is_defined(fh));
+		cellId = m_faceToCellId[fh];
+		lck.unlock();
+		if (cellId == InfiniteFacesCellId) {
+			cellId = 0;
+		}
 	}
 	else {
-		return 0;
+		cellId = 0;
 	}
+	return cellId;
 }
 
 const OsmTriangulationRegionStore::RegionList& OsmTriangulationRegionStore::regions(uint32_t cellId) {
 	return m_cellIdToCellList.at(m_refinedCellIdToUnrefined.at(cellId) );
 }
+
+bool OsmTriangulationRegionStore::selfTest() {
+	for(All_faces_iterator it(m_grid.tds().all_faces_begin()), end(m_grid.tds().all_faces_end()); it != end; ++it) {
+		if (!m_faceToCellId.is_defined(it)) {
+			if (m_grid.tds().is_infinite(it)) {
+				return false;
+			}
+			return false;
+		}
+	}
+	
+	for(const Face_handle & fh : m_grid.grid().storage()) {
+		if (!m_faceToCellId.is_defined(fh)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 
 }//end namespace
