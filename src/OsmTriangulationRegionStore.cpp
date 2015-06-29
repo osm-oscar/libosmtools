@@ -168,7 +168,8 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 			Face_handle fh = cgFaces[i];
 			for(int j(0); j < 3; ++j) {
 				Face_handle nfh = fh->neighbor(j);
-				if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
+				assert(m_faceToCellId.is_defined(nfh));
+				if (m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
 					faceToNodeId[nfh] = cgFaces.size();
 					cgFaces.emplace_back(nfh);
 				}
@@ -180,7 +181,8 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 			Face_handle fh = it;
 			for(int j(0); j < 3; ++j) {
 				Face_handle nfh = fh->neighbor(j);
-				if (m_faceToCellId.is_defined(nfh) && m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
+				assert(m_faceToCellId.is_defined(nfh));
+				if (m_faceToCellId[nfh] == myCellId && !faceToNodeId.is_defined(nfh)) {
 					faceToNodeId[nfh] = cgFaces.size();
 					cgFaces.emplace_back(nfh);
 				}
@@ -306,9 +308,8 @@ void OsmTriangulationRegionStore::clear() {
 
 void OsmTriangulationRegionStore::clearRefinement() {
 	for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-		if (m_faceToCellId.is_defined(it)) {
-			m_faceToCellId[it] = m_refinedCellIdToUnrefined.at(m_faceToCellId[it]);
-		}
+		assert(m_faceToCellId.is_defined(it));
+		m_faceToCellId[it] = m_refinedCellIdToUnrefined.at(m_faceToCellId[it]);
 	}
 	m_refinedCellIdToUnrefined.clear();
 	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
