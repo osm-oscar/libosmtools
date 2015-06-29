@@ -59,7 +59,7 @@ public:
 	inline uint32_t size() const { return m_nodes.size(); }
 	inline uint32_t cellId() const { return m_cellId; }
 	///@param bfsTree (nodeId, hopdistance from faceNodeId)
-	void calcMaxHopDistance(std::vector< std::pair< uint32_t, uint32_t > >& bfsTree);
+	void calcMaxHopDistance(uint32_t& maxHopDistRoot);
 	uint32_t calcDiameter(uint32_t * startNode, uint32_t * endNode);
 	const FaceNode & node(uint32_t pos) const { return m_nodes.at(pos); }
 	FaceNode & node(uint32_t pos) { return m_nodes.at(pos); }

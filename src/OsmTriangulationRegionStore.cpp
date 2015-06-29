@@ -9,7 +9,7 @@ namespace OsmTriangulationRegionStore {
 constexpr uint32_t CTGraphBase::NullFace;
 constexpr uint32_t CTGraphBase::FaceNode::NullNeighbor;
 
-void CTGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> > & bfsTree) {
+void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 	struct WorkContext {
 		std::mutex lock;
 		uint32_t processNode;
@@ -73,8 +73,7 @@ void CTGraphBase::calcMaxHopDistance(std::vector< std::pair<uint32_t, uint32_t> 
 	Worker w(&wctx);
 	sserialize::ThreadPool::execute(w, (wctx.nodes->size() > 1000 ? 0 : 1));
 	
-	w.calc(wctx.maxHopDistRoot);
-	bfsTree = std::move(w.bfsTree);
+	maxHopDistRoot = wctx.maxHopDistRoot;
 }
 
 CellGraph::CellGraph(CellGraph && other) :
@@ -400,7 +399,6 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 
 	//Stuff needed to handle the explicit dual-graph
 	CTGraph cg;
-	std::vector< std::pair<uint32_t, uint32_t> > bfsTree;
 	std::vector<uint32_t> hopDists;
 	std::vector<uint32_t> newFaceCellIds;
 	std::unordered_set<uint32_t> currentCells;
@@ -443,9 +441,9 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 			ctGraph(cellRep.at(cellId), cg);
 			assert(cg.size() == cellSizes.at(cellId));
 			
-			cg.calcMaxHopDistance(bfsTree);
+			uint32_t currentGenerator;
+			cg.calcMaxHopDistance(currentGenerator);
 			
-			uint32_t currentGenerator = bfsTree.front().first;
 			uint32_t currentCellId = cellId;
 			cellRep.at(cellId) = cg.face(currentGenerator);
 			currentCells.insert(currentCellId);
