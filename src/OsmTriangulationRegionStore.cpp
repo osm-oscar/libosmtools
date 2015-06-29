@@ -153,7 +153,8 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 	faceToNodeId.clear();
 	cgFaces.clear();
 	cg.m_nodes.clear();
-
+	cg.m_cellId = 0xFFFFFFFF;
+	
 	if (!m_faceToCellId.is_defined(rfh)) {
 		throw std::out_of_range("OsmTriangulationRegionStore::ctGraph called with invalid cell representative");
 	}
