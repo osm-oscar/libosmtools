@@ -281,7 +281,7 @@ void OsmTriangulationRegionStore::setInfinteFacesCellIds() {
 			m_faceToCellId[it] = InfiniteFacesCellId;
 		}
 	}
-	//the following should be eqauivalent but isn't. Why?
+	//the following should be equivalent but isn't. Why?
 // 	Triangulation::Face_circulator ifcBegin(m_grid.tds().incident_faces(m_grid.tds().infinite_vertex()));
 // 	Triangulation::Face_circulator ifcEnd(ifcBegin);
 // 	for(; ifcBegin != ifcEnd; ++ifcBegin) {
