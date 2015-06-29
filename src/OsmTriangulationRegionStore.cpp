@@ -625,6 +625,19 @@ bool OsmTriangulationRegionStore::selfTest() {
 			return false;
 		}
 	}
+	if (m_isConnected) {
+		std::vector<Face_handle> cellRepresentatives;
+		std::vector<uint32_t> cellSizes;
+		cellInfo(cellRepresentatives, cellSizes);
+		assert(cellRepresentatives.size() == cellSizes.size() && cellSizes.size() == cellCount());
+		CTGraph cg;
+		for(uint32_t cellId(1), s(cellRepresentatives.size()); cellId < s; ++cellId) {
+			ctGraph(cellRepresentatives.at(cellId), cg);
+			if (cg.size() != cellSizes.at(cellId)) {
+				return false;
+			}
+		}
+	}
 	return true;
 }
 
