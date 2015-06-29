@@ -290,10 +290,12 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 			}
 		}
 		std::cout << "done" << std::endl;
+#ifndef NDEBUG
 		for(const std::pair<uint32_t, uint32_t> & s : segments) {
 			assert(s.first < pts.size());
 			assert(s.second < pts.size());
 		}
+#endif
 		std::cout << "OsmTriangulationRegionStore: creating triangulation..." << std::flush;
 		m_grid.tds().insert_constraints(pts.cbegin(), pts.cend(), segments.cbegin(), segments.cend());
 		std::cout << "done" << std::endl;
