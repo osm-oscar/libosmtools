@@ -246,6 +246,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
+	this->clear();
 	{
 		//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
 		//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
