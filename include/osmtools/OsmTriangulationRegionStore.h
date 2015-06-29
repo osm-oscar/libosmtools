@@ -354,7 +354,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					uint32_t faceCellId = 0;
 					lck.lock();
 					if (!ctx->cellListToCellId.count(tmp)) {
-						faceCellId = ctx->cellListToCellId.size(); //+1 account for the infinte_face
+						faceCellId = ctx->cellListToCellId.size();
 						sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
 						ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
 						tmp = RegionList(ctx->p_cellLists, off, tmp.size());
