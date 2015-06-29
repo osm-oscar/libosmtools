@@ -299,11 +299,13 @@ uint32_t OsmTriangulationRegionStore::cellId(const OsmTriangulationRegionStore::
 }
 
 void OsmTriangulationRegionStore::clear() {
+
 	m_grid = GridLocator();
 	m_faceToCellId = FaceCellIdMap();
 	m_cellLists = RegionListContainer();
 	m_cellIdToCellList = decltype(m_cellIdToCellList)();
 	m_refinedCellIdToUnrefined = decltype(m_refinedCellIdToUnrefined)();
+	m_isConnected = false;
 }
 
 void OsmTriangulationRegionStore::clearRefinement() {
@@ -559,6 +561,10 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 #endif
 	assert(selfTest());
 }
+
+OsmTriangulationRegionStore::OsmTriangulationRegionStore() :
+m_isConnected(false)
+{}
 
 void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 	if (cellCount() <= 1)

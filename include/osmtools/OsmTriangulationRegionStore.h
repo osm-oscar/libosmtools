@@ -197,7 +197,7 @@ private:
 private:
 	void setInfinteFacesCellIds();
 public:
-	OsmTriangulationRegionStore() {}
+	OsmTriangulationRegionStore();
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
 	~OsmTriangulationRegionStore() {}
 	void clear();
