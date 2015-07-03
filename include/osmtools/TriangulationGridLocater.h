@@ -31,7 +31,7 @@ public:
 	Face_handle locate(double x, double y) const;
 	inline bool contains(double lat, double lon) { return m_grid.contains(lat, lon); }
 	///serialize this to sserialize::Static::spatial::TriangulationGridLocator
-	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator<TDs>::Face_handle, uint32_t > & face2FaceId) const;
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator< TDs >::Face_handle, uint32_t >& face2FaceId);
 };
 
 
@@ -73,7 +73,7 @@ GridLocator<TDs>::locate(double x, double y) const {
 }
 template<typename TDs>
 sserialize::UByteArrayAdapter&
-GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator<TDs>::Face_handle, uint32_t > & face2FaceId) const {
+GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator<TDs>::Face_handle, uint32_t > & face2FaceId) {
 	dest.putUint8(1);//version
 	CGAL::Unique_hash_map<Vertex_handle, uint32_t> vertex2VertexId;
 	sserialize::Static::spatial::Triangulation::append(m_tds, face2FaceId, vertex2VertexId, dest);
@@ -83,7 +83,7 @@ GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_
 	sserialize::Static::ArrayCreator<uint32_t> ac(dest);
 	for(uint32_t i(0), s(m_grid.tileCount()); i < s; ++i) {
 		const Face_handle & fh = m_grid.binAt(i);
-		assert(face2FaceId.is_defined(fh));
+		assert(face2FaceId.is_defined(fh) || m_tds.is_infinite(fh));
 		ac.put(face2FaceId[fh]);
 	}
 	ac.flush();

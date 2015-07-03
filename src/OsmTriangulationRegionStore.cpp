@@ -611,7 +611,7 @@ const OsmTriangulationRegionStore::RegionList& OsmTriangulationRegionStore::regi
 	return m_cellIdToCellList.at(m_refinedCellIdToUnrefined.at(cellId) );
 }
 
-sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, sserialize::ItemIndexFactory & idxFactory) const {
+sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, sserialize::ItemIndexFactory & idxFactory) {
 	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
 	dest.putUint8(1); //version
 	m_grid.append(dest, face2FaceId);
@@ -637,7 +637,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 	return dest;
 }
 
-sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds) const {
+sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds) {
 // 	assert(myIdsToGhCellIds.size() <= cellCount());
 	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
 	uint32_t myNullCellId = myIdsToGhCellIds.size();
