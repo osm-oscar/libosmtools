@@ -20,7 +20,7 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 	
 	struct Worker {
 		WorkContext * ctx;
-		SimpleBitVector processedNodes;
+		sserialize::SimpleBitVector processedNodes;
 		std::vector< std::pair<uint32_t, uint32_t> > bfsTree; //holds (nodeId, hopDist)
 		Worker(WorkContext * wctx) : ctx(wctx) {
 			uint32_t nodeCount = ctx->nodes->size();
@@ -609,6 +609,61 @@ uint32_t OsmTriangulationRegionStore::cellId(double lat, double lon) {
 
 const OsmTriangulationRegionStore::RegionList& OsmTriangulationRegionStore::regions(uint32_t cellId) {
 	return m_cellIdToCellList.at(m_refinedCellIdToUnrefined.at(cellId) );
+}
+
+sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, sserialize::ItemIndexFactory & idxFactory) const {
+	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
+	dest.putUint8(1); //version
+	m_grid.append(dest, face2FaceId);
+	{ //serialize the region lists
+		std::vector<uint32_t> tmp;
+		for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
+			tmp.push_back( idxFactory.addIndex(m_cellIdToCellList.at(i)) );
+		}
+		sserialize::BoundedCompactUintArray::create(tmp, dest);
+	}
+	sserialize::BoundedCompactUintArray::create(m_refinedCellIdToUnrefined, dest);
+	{//faceId->cellId
+		std::vector<uint32_t> faceId2CellId(m_grid.tds().number_of_faces());
+		uint32_t numFiniteFaces;
+		for(Finite_faces_iterator fit(m_grid.tds().finite_faces_begin()), fend(m_grid.tds().finite_faces_end()); fit != fend; ++fit) {
+			++numFiniteFaces;
+			assert(face2FaceId.is_defined(fit));
+			faceId2CellId.at(face2FaceId[fit]) = m_faceToCellId[fit];
+		}
+		faceId2CellId.resize(numFiniteFaces);
+		sserialize::BoundedCompactUintArray::create(faceId2CellId, dest);
+	}
+	return dest;
+}
+
+sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds) const {
+// 	assert(myIdsToGhCellIds.size() <= cellCount());
+	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
+	uint32_t myNullCellId = myIdsToGhCellIds.size();
+	dest.putUint8(1); //version
+	dest.putUint32(myNullCellId);
+	m_grid.append(dest, face2FaceId);
+	{//faceId->cellId
+		std::vector<uint32_t> faceId2CellId(m_grid.tds().number_of_faces());
+		uint32_t numFiniteFaces;
+		for(Finite_faces_iterator fit(m_grid.tds().finite_faces_begin()), fend(m_grid.tds().finite_faces_end()); fit != fend; ++fit) {
+			++numFiniteFaces;
+			assert(face2FaceId.is_defined(fit));
+			faceId2CellId.at(face2FaceId[fit]) = m_faceToCellId[fit];
+		}
+		faceId2CellId.resize(numFiniteFaces);
+		for(uint32_t & x : faceId2CellId) {
+			if (myIdsToGhCellIds.count(x)) {
+				x = myIdsToGhCellIds.at(x);
+			}
+			else {
+				x = myNullCellId;
+			}
+		}
+		sserialize::BoundedCompactUintArray::create(faceId2CellId, dest);
+	}
+	return dest;
 }
 
 bool OsmTriangulationRegionStore::selfTest() {

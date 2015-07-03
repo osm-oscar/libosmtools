@@ -2,7 +2,9 @@
 #define LIBOSMTOOLS_TRIANGLUATION_GRID_LOCATOR_H
 #include <sserialize/spatial/RWGeoGrid.h>
 #include <sserialize/utility/utilmath.h>
+#include <sserialize/Static/Triangulation.h>
 #include <CGAL/number_utils.h>
+#include <CGAL/Unique_hash_map.h>
 
 namespace osmtools {
 
@@ -11,6 +13,7 @@ class GridLocator {
 public:
 	typedef TDs TriangulationDataStructure;
 	typedef typename TDs::Face_handle Face_handle;
+	typedef typename TDs::Vertex_handle Vertex_handle;
 	typedef sserialize::spatial::RWGeoGrid<Face_handle> Grid;
 private:
 	typedef typename TriangulationDataStructure::Triangulation::Geom_traits::Point_2 Point_2;
@@ -27,6 +30,8 @@ public:
 	///@thread-safety NO
 	Face_handle locate(double x, double y) const;
 	inline bool contains(double lat, double lon) { return m_grid.contains(lat, lon); }
+	///serialize this to sserialize::Static::spatial::TriangulationGridLocator
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator<TDs>::Face_handle, uint32_t > & face2FaceId) const;
 };
 
 
@@ -66,6 +71,25 @@ GridLocator<TDs>::locate(double x, double y) const {
 	}
 	return m_tds.locate(Point_2(x,y), m_grid.at(x,y));
 }
+template<typename TDs>
+sserialize::UByteArrayAdapter&
+GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator<TDs>::Face_handle, uint32_t > & face2FaceId) const {
+	dest.putUint8(1);//version
+	CGAL::Unique_hash_map<Vertex_handle, uint32_t> vertex2VertexId;
+	sserialize::Static::spatial::Triangulation::append(m_tds, face2FaceId, vertex2VertexId, dest);
+	vertex2VertexId.clear();
+	
+	dest << static_cast<const sserialize::spatial::GeoGrid&>(m_grid);
+	sserialize::Static::ArrayCreator<uint32_t> ac(dest);
+	for(uint32_t i(0), s(m_grid.tileCount()); i < s; ++i) {
+		const Face_handle & fh = m_grid.binAt(i);
+		assert(face2FaceId.is_defined(fh));
+		ac.put(face2FaceId[fh]);
+	}
+	ac.flush();
+	return dest;
+}
+
 
 
 }//end namespace

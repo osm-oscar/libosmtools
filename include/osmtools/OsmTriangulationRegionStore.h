@@ -3,11 +3,13 @@
 #include <unordered_map>
 
 #include <sserialize/utility/hashspecializations.h>
+#include <sserialize/utility/TimeMeasuerer.h>
+#include <sserialize/utility/debug.h>
+#include <sserialize/containers/ItemIndexFactory.h>
+#include <sserialize/utility/SimpleBitVector.h>
 
 #include <osmtools/OsmGridRegionTree.h>
 #include <osmtools/TriangulationGridLocater.h>
-
-#include <sserialize/utility/TimeMeasuerer.h>
 
 //CGAL includes
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
@@ -16,6 +18,7 @@
 #include <CGAL/Triangulation_2.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Constrained_triangulation_plus_2.h>
+
 
 #include <assert.h>
 #include <thread>
@@ -26,14 +29,6 @@ class OsmTriangulationRegionStore;
 
 namespace detail {
 namespace OsmTriangulationRegionStore {
-
-struct SimpleBitVector {
-	std::vector<uint64_t> m_d;
-	inline void resize(uint32_t count) { m_d.resize(count/64+1, 0); }
-	inline void set(uint32_t pos) { m_d.at(pos/64) |= (static_cast<uint64_t>(1) << (pos%64)); }
-	inline bool isSet(uint32_t pos) { return m_d.at(pos/64) & (static_cast<uint64_t>(1) << (pos%64)); }
-	inline void reset() { m_d.assign(m_d.size(), 0); }
-};
 
 //CellTriangulationGraph
 class CTGraphBase {
@@ -146,7 +141,7 @@ public:
 	typedef sserialize::CFLArray<RegionListContainer> RegionList;
 	typedef GridLocator::TriangulationDataStructure::Finite_faces_iterator Finite_faces_iterator;
 	typedef GridLocator::TriangulationDataStructure::All_faces_iterator All_faces_iterator;
-	typedef detail::OsmTriangulationRegionStore::SimpleBitVector SimpleBitVector;
+	typedef sserialize::SimpleBitVector SimpleBitVector;
 public:
 	class CTGraph: public detail::OsmTriangulationRegionStore::CTGraphBase {
 	private:
@@ -238,6 +233,11 @@ public:
 	void printStats(std::ostream & out);
 	
 	bool selfTest();
+	///serializes to sserialize::Static::spatial::TriangulationRegionArrangement
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, sserialize::ItemIndexFactory & idxFactory) const;
+	
+	///serializes to sserialize::Static::spatial::TriangulationGeoHierarchyArrangement
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) const;
 };
 
 
