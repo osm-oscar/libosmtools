@@ -2,7 +2,6 @@
 #define OSM_TOOLS_AREA_EXTRACTOR_H
 #include <string>
 #include <cstdlib>
-#include <omp.h>
 #include <sserialize/spatial/GeoMultiPolygon.h>
 #include <sserialize/spatial/GeoRegionStore.h>
 #include <osmpbf/osmfile.h>
@@ -12,6 +11,7 @@
 #include <osmpbf/inode.h>
 #include <osmtools/AreaExtractorFilters.h>
 #include <osmpbf/parsehelpers.h>
+
 
 /** This is a simple class to extract areas from OpenStreetMap pbf-files
   * It needs the osmpbf and sserialize libraries in global include paths
