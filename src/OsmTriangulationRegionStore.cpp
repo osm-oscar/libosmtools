@@ -639,30 +639,53 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 
 sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds) {
 // 	assert(myIdsToGhCellIds.size() <= cellCount());
+#ifdef DEBUG_CHECK_ALL
+	sserialize::UByteArrayAdapter::OffsetType initialOffset = dest.tellPutPtr();
+#endif
+
 	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
 	uint32_t myNullCellId = myIdsToGhCellIds.size();
 	dest.putUint8(1); //version
 	dest.putUint32(myNullCellId);
 	m_grid.append(dest, face2FaceId);
-	{//faceId->cellId
-		std::vector<uint32_t> faceId2CellId(m_grid.tds().number_of_faces());
-		uint32_t numFiniteFaces;
-		for(Finite_faces_iterator fit(m_grid.tds().finite_faces_begin()), fend(m_grid.tds().finite_faces_end()); fit != fend; ++fit) {
-			++numFiniteFaces;
-			assert(face2FaceId.is_defined(fit));
-			faceId2CellId.at(face2FaceId[fit]) = m_faceToCellId[fit];
-		}
-		faceId2CellId.resize(numFiniteFaces);
-		for(uint32_t & x : faceId2CellId) {
-			if (myIdsToGhCellIds.count(x)) {
-				x = myIdsToGhCellIds.at(x);
-			}
-			else {
-				x = myNullCellId;
-			}
-		}
-		sserialize::BoundedCompactUintArray::create(faceId2CellId, dest);
+	
+	std::vector<uint32_t> faceId2CellId(m_grid.tds().number_of_faces());
+	uint32_t numFiniteFaces = 0;
+	for(Finite_faces_iterator fit(m_grid.tds().finite_faces_begin()), fend(m_grid.tds().finite_faces_end()); fit != fend; ++fit) {
+		++numFiniteFaces;
+		assert(face2FaceId.is_defined(fit));
+		faceId2CellId.at(face2FaceId[fit]) = m_faceToCellId[fit];
 	}
+	faceId2CellId.resize(numFiniteFaces);
+	for(uint32_t & x : faceId2CellId) {
+		if (myIdsToGhCellIds.count(x)) {
+			x = myIdsToGhCellIds.at(x);
+		}
+		else {
+			x = myNullCellId;
+		}
+	}
+	sserialize::BoundedCompactUintArray::create(faceId2CellId, dest);
+	
+#ifdef DEBUG_CHECK_ALL
+	{
+		sserialize::UByteArrayAdapter tmp(dest);
+		tmp.setPutPtr(initialOffset);
+		tmp.shrinkToPutPtr();
+		sserialize::Static::spatial::TriangulationGeoHierarchyArrangement ra(tmp);
+		assert(ra.cellCount() == myIdsToGhCellIds.size());
+		for(Finite_faces_iterator fit(m_grid.tds().finite_faces_begin()), fend(m_grid.tds().finite_faces_end()); fit != fend; ++fit) {
+			assert(face2FaceId.is_defined(fit));
+			uint32_t sfaceId = face2FaceId[fit];
+			uint32_t myCellId = m_faceToCellId[fit];
+			uint32_t remappedCellId = myNullCellId;
+			if (myIdsToGhCellIds.count(myCellId)) {
+				remappedCellId = myIdsToGhCellIds.at(myCellId);
+			}
+			assert(remappedCellId == ra.cellIdFromFaceId(sfaceId));
+		}
+	}
+#endif
 	return dest;
 }
 

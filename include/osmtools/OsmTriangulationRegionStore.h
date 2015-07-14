@@ -10,6 +10,7 @@
 
 #include <osmtools/OsmGridRegionTree.h>
 #include <osmtools/TriangulationGridLocater.h>
+#include <sserialize/Static/TriangulationGeoHierarchyArrangement.h>
 
 //CGAL includes
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
@@ -238,6 +239,8 @@ public:
 	
 	///serializes to sserialize::Static::spatial::TriangulationGeoHierarchyArrangement
 	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
+	
+	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
 };
 
 
