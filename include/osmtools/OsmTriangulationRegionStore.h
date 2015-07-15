@@ -18,7 +18,7 @@
 #include <CGAL/Triangulation_euclidean_traits_2.h>
 #include <CGAL/Triangulation_2.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
-#include <CGAL/Constrained_triangulation_plus_2.h>
+#include <CGAL/Delaunay_mesher_2.h>
 
 
 #include <assert.h>
@@ -159,7 +159,17 @@ public:
 	};
 	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
 	struct NoRefinementTriangleRefiner {
-		bool operator()(const Face_handle & /*fh*/) { return false; }
+		inline bool operator()(const Face_handle & /*fh*/) { return false; }
+	};
+	
+	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
+	class RefineByCentroidTriangleRefiner {
+	private:
+		double m_r;
+		sserialize::spatial::DistanceCalculator m_dc;
+	public:
+		RefineByCentroidTriangleRefiner(double maxDist) : m_r(maxDist), m_dc(sserialize::spatial::DistanceCalculator::DCT_GEODESIC_ACCURATE) {}
+		bool operator()(const Face_handle & fh) const;
 	};
 public:
 	static constexpr uint32_t InfiniteFacesCellId = 0xFFFFFFFF;
@@ -245,7 +255,7 @@ public:
 
 
 template<typename TDummy, typename T_TRIANG_REFINER>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER /*triangRefiner*/) {
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER triangRefiner) {
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
@@ -305,6 +315,27 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		std::cout << "done" << std::endl;
 	}
 	
+	//refine the triangulation
+	{
+		uint32_t refineCount = 0;
+		std::vector<Point> refinePoints;
+		bool trWasRefined = true;
+		for(uint32_t round(0); round < 10000 && trWasRefined; ++round) {
+			std::cout << "Trianglerefinement round " << round << std::flush;
+			trWasRefined = false;
+			refinePoints.clear();
+			for(Finite_faces_iterator fit(finite_faces_begin()), fend(finite_faces_end()); fit != fend; ++fit) {
+				if (triangRefiner(fit)) {
+					refinePoints.push_back(centroid(fit));
+				}
+			}
+			uint32_t tmp = m_grid.tds().insert(refinePoints.begin(), refinePoints.end());
+			refineCount = tmp;
+			trWasRefined = refinePoints.size();
+			std::cout << " added" << tmp << " extra points" << std::endl;
+		};
+		std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
+	}
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
 	//faces that are connected and have the same region-list get the same cellid
