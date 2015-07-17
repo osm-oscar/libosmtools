@@ -305,6 +305,9 @@ public:
 	typedef detail::OsmTriangulationRegionStore::CentroidDistanceMeshCriteria<CDT> CentroidDistanceMeshCriteria;
 	typedef detail::OsmTriangulationRegionStore::LipschitzMeshCriteria<CDT> LipschitzMeshCriteria;
 	
+	struct CGALRefineTag {};
+	struct MyRefineTag {};
+	
 	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
 public:
 	static constexpr uint32_t InfiniteFacesCellId = 0xFFFFFFFF;
@@ -323,8 +326,6 @@ private:
 	};
 // 	typedef std::unordered_map<Face_handle, uint32_t, FaceHandleHash> FaceCellIdMap;
 	typedef CGAL::Unique_hash_map<Face_handle, uint32_t> FaceCellIdMap;
-	struct CGALRefineTag {};
-	struct MyRefineTag {};
 private:
 	static Point centroid(const Face_handle & fh);
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
@@ -586,10 +587,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		for(const auto & x : ctx.cellListToCellId) {
 			m_cellIdToCellList.at(x.second) = x.first;
 		}
-		
-		//now refine alle triangles that are too large by splitting them with their centroid
-		//we only do this for triangles contained in regions
-		//all other triangles
 		
 	}
 	m_refinedCellIdToUnrefined.reserve(m_cellIdToCellList.size());
