@@ -693,7 +693,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 			assert(face2FaceId.is_defined(fit));
 			uint32_t sfaceId = face2FaceId[fit];
 			uint32_t myCellId = m_faceToCellId[fit];
-			uint32_t remappedCellId = myNullCellId;
+			uint32_t remappedCellId = sserialize::Static::spatial::Triangulation::NullFace;
 			if (myIdsToGhCellIds.count(myCellId)) {
 				remappedCellId = myIdsToGhCellIds.at(myCellId);
 			}
