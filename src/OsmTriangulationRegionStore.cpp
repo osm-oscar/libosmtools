@@ -115,21 +115,6 @@ CellGraph& CellGraph::operator=(const CellGraph & other) {
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
-bool OsmTriangulationRegionStore::RefineByCentroidTriangleRefiner::operator()(const OsmTriangulationRegionStore::Face_handle& fh) const {
-	OsmTriangulationRegionStore::Point p(OsmTriangulationRegionStore::centroid(fh));
-	double latp = CGAL::to_double(p.x());
-	double lonp = CGAL::to_double(p.y());
-	for(int j(0); j < 3; ++j) {
-		OsmTriangulationRegionStore::Point fp( fh->vertex(j)->point() );
-		double lat = CGAL::to_double(fp.x());
-		double lon = CGAL::to_double(fp.y());
-		if (m_dc.calc(latp, lonp, lat, lon) > m_r) {
-			return true;
-		}
-	}
-	return false;
-}
-
 OsmTriangulationRegionStore::Face_handle OsmTriangulationRegionStore::CTGraph::face(uint32_t faceNodeId) {
 	return m_faces.at(faceNodeId);
 }

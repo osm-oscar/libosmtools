@@ -18,7 +18,10 @@
 #include <CGAL/Triangulation_euclidean_traits_2.h>
 #include <CGAL/Triangulation_2.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
+#include <CGAL/Delaunay_mesh_face_base_2.h>
 #include <CGAL/Delaunay_mesher_2.h>
+
+#include <CGAL/Delaunay_mesh_size_criteria_2.h>
 
 
 #include <assert.h>
@@ -30,6 +33,11 @@ class OsmTriangulationRegionStore;
 
 namespace detail {
 namespace OsmTriangulationRegionStore {
+
+template<typename T_TRIANGULATION>
+typename T_TRIANGULATION::Point centroid(const typename T_TRIANGULATION::Face_handle & fh) {
+	return CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
+}
 
 //CellTriangulationGraph
 class CTGraphBase {
@@ -117,6 +125,131 @@ public:
 	inline CellNode & node(uint32_t pos) { return m_nodes.at(pos); }
 };
 
+
+template<typename TDS>
+class CentroidDistanceBaseMeshCriteria {
+public:
+	typedef typename TDS::Face_handle Face_handle;
+	typedef typename TDS::Point Point;
+	struct Is_bad {
+		sserialize::spatial::DistanceCalculator m_dc;
+		Is_bad(const sserialize::spatial::DistanceCalculator & dc) : m_dc(dc) {}
+		double maxCentroidDist(Face_handle fh) const {
+			Point p(::osmtools::detail::OsmTriangulationRegionStore::centroid<TDS>(fh));
+			double latp = CGAL::to_double(p.x());
+			double lonp = CGAL::to_double(p.y());
+			double q = 0.0;
+			for(int j(0); j < 3; ++j) {
+				Point fp( fh->vertex(j)->point() );
+				double lat = CGAL::to_double(fp.x());
+				double lon = CGAL::to_double(fp.y());
+				double tmp = m_dc.calc(latp, lonp, lat, lon);
+				q = std::max<double>(tmp, q);
+			}
+			return q;
+		}
+	};
+protected:
+	sserialize::spatial::DistanceCalculator m_dc;
+protected:
+	const sserialize::spatial::DistanceCalculator & dc() const { return m_dc; }
+public:
+	CentroidDistanceBaseMeshCriteria() : m_dc(sserialize::spatial::DistanceCalculator::DCT_GEODESIC_ACCURATE) {}
+};
+
+template<typename TDS>
+class CentroidDistanceMeshCriteria: public CentroidDistanceBaseMeshCriteria<TDS> {
+public:
+	typedef CentroidDistanceBaseMeshCriteria<TDS> MyParentClass;
+	typedef typename MyParentClass::Face_handle Face_handle;
+	typedef typename MyParentClass::Point Point;
+public:
+	typedef double Quality;
+	struct Is_bad: MyParentClass::Is_bad {
+		double m_r;
+		sserialize::spatial::DistanceCalculator m_dc;
+		Is_bad(double maxDist, const sserialize::spatial::DistanceCalculator & dc) : MyParentClass::Is_bad(dc), m_r(maxDist), m_dc(dc) {}
+		
+		CGAL::Mesh_2::Face_badness operator()(Quality q) const {
+			if (q > m_r) {
+				return CGAL::Mesh_2::IMPERATIVELY_BAD;
+			}
+			else {
+				return CGAL::Mesh_2::NOT_BAD;
+			}
+		}
+		
+		CGAL::Mesh_2::Face_badness operator()(Face_handle fh, Quality & q) const {
+			q = MyParentClass::Is_bad::maxCentroidDist(fh);
+			return (*this)(q);
+		};
+	};
+private:
+	double m_r;
+public:
+	CentroidDistanceMeshCriteria(double maxDist) : m_r(maxDist) {}
+	Is_bad is_bad_object() const { return Is_bad(m_r, MyParentClass::dc()); }
+};
+
+
+template<typename TDS>
+class LipschitzMeshCriteria: CentroidDistanceBaseMeshCriteria<TDS> {
+public:
+	typedef CentroidDistanceBaseMeshCriteria<TDS> MyParentClass;
+	typedef typename MyParentClass::Face_handle Face_handle;
+	typedef typename MyParentClass::Point Point;
+	typedef double Quality;
+	struct Is_bad: MyParentClass::Is_bad {
+		double m_s;
+		TDS * m_tds;
+		Is_bad(double maxDist, const sserialize::spatial::DistanceCalculator & dc, TDS * tds) : MyParentClass::Is_bad(dc), m_s(maxDist), m_tds(tds) {}
+		
+		CGAL::Mesh_2::Face_badness operator()(Quality q) const {
+			if (q > m_s) {
+				return CGAL::Mesh_2::IMPERATIVELY_BAD;
+			}
+			else {
+				return CGAL::Mesh_2::NOT_BAD;
+			}
+		}
+		
+		CGAL::Mesh_2::Face_badness operator()(Face_handle fh, Quality & q) {
+			double maxSlope = 0.0;
+			double myCD = MyParentClass::Is_bad::maxCentroidDist(fh);
+			//by definition: slope goes from nfh to fh
+			//=> if this is the smallest triangle, then the slope is negative for all neighbors, if not it's positive
+			for(int j(0); j < 3; ++j) {
+				Face_handle nfh(fh->neighbor(j));
+				if (!m_tds->is_infinite(nfh)) {
+					double nfhD = MyParentClass::Is_bad::maxCentroidDist(nfh);
+					if (myCD > nfhD) {
+						maxSlope = std::max<double>(myCD / nfhD, maxSlope);
+					}
+				}
+			}
+			if (maxSlope > 2200) {
+				for(int j(0); j < 3; ++j) {
+					Face_handle nfh(fh->neighbor(j));
+					if (!m_tds->is_infinite(nfh)) {
+						double nfhD = MyParentClass::Is_bad::maxCentroidDist(nfh);
+						if (myCD > nfhD) {
+							maxSlope = std::max<double>(myCD / nfhD, maxSlope);
+						}
+					}
+				}
+			}
+			q = maxSlope;
+			return (*this)(q);
+		};
+	};
+private:
+	double m_s;
+	TDS * m_tds;
+public:
+	LipschitzMeshCriteria(double maxSlope, TDS * tds) : m_s(maxSlope), m_tds(tds) {}
+	Is_bad is_bad_object() const { return Is_bad(m_s, MyParentClass::dc(), m_tds); }
+};
+
 }}//end namespace detail::OsmTriangulationRegionStore
 
 /** This class splits the arrangement of regions into cells to support fast point-in-polygon look-ups
@@ -129,11 +262,21 @@ class OsmTriangulationRegionStore {
 public:
 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 	typedef CGAL::Exact_intersections_tag Itag;
+// 	typedef CGAL::No_intersection_tag Itag;
+// 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
+// // 	typedef CGAL::Constrained_triangulation_face_base_2<K> Fb;
+// 	typedef CGAL::Delaunay_mesh_face_base_2<K> Fb;
+// 	typedef CGAL::Triangulation_data_structure_2<Vb, Fb> TDS;
+// 	typedef CGAL::Constrained_Delaunay_triangulation_2<K, TDS, Itag> CDT;
+// // 	typedef CGAL::Constrained_triangulation_plus_2<CDT> CDTP;
+
+
+// 	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
-	typedef CGAL::Constrained_triangulation_face_base_2<K> Fb;
-	typedef CGAL::Triangulation_data_structure_2<Vb,Fb> TDS;
-	typedef CGAL::Constrained_Delaunay_triangulation_2<K,TDS,Itag> CDT;
-	typedef CGAL::Constrained_triangulation_plus_2<CDT> CDTP;
+	typedef CGAL::Delaunay_mesh_face_base_2<K> Fb;
+	typedef CGAL::Triangulation_data_structure_2<Vb, Fb> Tds;
+	typedef CGAL::Constrained_Delaunay_triangulation_2<K, Tds, Itag> CDT;
+
 	typedef CDT Triangulation;
 	typedef Triangulation::Point Point;
 	typedef osmtools::GridLocator<Triangulation> GridLocator;
@@ -158,19 +301,11 @@ public:
 		using CTGraphBase::node;
 	};
 	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
-	struct NoRefinementTriangleRefiner {
-		inline bool operator()(const Face_handle & /*fh*/) { return false; }
-	};
+	
+	typedef detail::OsmTriangulationRegionStore::CentroidDistanceMeshCriteria<CDT> CentroidDistanceMeshCriteria;
+	typedef detail::OsmTriangulationRegionStore::LipschitzMeshCriteria<CDT> LipschitzMeshCriteria;
 	
 	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
-	class RefineByCentroidTriangleRefiner {
-	private:
-		double m_r;
-		sserialize::spatial::DistanceCalculator m_dc;
-	public:
-		RefineByCentroidTriangleRefiner(double maxDist) : m_r(maxDist), m_dc(sserialize::spatial::DistanceCalculator::DCT_GEODESIC_ACCURATE) {}
-		bool operator()(const Face_handle & fh) const;
-	};
 public:
 	static constexpr uint32_t InfiniteFacesCellId = 0xFFFFFFFF;
 private:
@@ -188,10 +323,19 @@ private:
 	};
 // 	typedef std::unordered_map<Face_handle, uint32_t, FaceHandleHash> FaceCellIdMap;
 	typedef CGAL::Unique_hash_map<Face_handle, uint32_t> FaceCellIdMap;
+	struct CGALRefineTag {};
+	struct MyRefineTag {};
 private:
 	static Point centroid(const Face_handle & fh);
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
 	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
+
+	template<typename T_REFINER>
+	void refineMesh(T_REFINER & refiner, CGALRefineTag dummyTag);
+
+	template<typename T_REFINER>
+	void refineMesh(T_REFINER & refiner, MyRefineTag dummyTag);
+	
 private:
 	GridLocator m_grid;
 	FaceCellIdMap m_faceToCellId;
@@ -207,12 +351,14 @@ public:
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
 	~OsmTriangulationRegionStore() {}
 	void clear();
+	const Triangulation & tds() const { return m_grid.tds(); }
+	Triangulation & tds() { return m_grid.tds(); }
 	inline uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
 	inline uint32_t unrefinedCellCount() const { return m_cellIdToCellList.size(); }
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
-	///@param triangRefiner bool operator()(const Face_handle & fh); selects if a triang should be refined
-	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::NoRefinementTriangleRefiner>
-	void init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER triangRefiner = T_TRIANG_REFINER());
+	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2
+	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::LipschitzMeshCriteria, typename T_REFINEMENT_ALGO_TAG = MyRefineTag>
+	void init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria = 0, T_REFINEMENT_ALGO_TAG dummyTag = T_REFINEMENT_ALGO_TAG());
 	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
 
 	void makeConnected();
@@ -253,9 +399,45 @@ public:
 	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
 };
 
+template<typename T_REFINER>
+void OsmTriangulationRegionStore::refineMesh(T_REFINER & refiner, OsmTriangulationRegionStore::CGALRefineTag /*dummyTag*/) {
+// 		CGAL::refine_Delaunay_mesh_2(m_grid.tds(), CGAL::Delaunay_mesh_size_criteria_2<CDT>(0.125, 0.5));
+		CGAL::refine_Delaunay_mesh_2(m_grid.tds(), refiner);
+}
 
-template<typename TDummy, typename T_TRIANG_REFINER>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER triangRefiner) {
+template<typename T_REFINER>
+void OsmTriangulationRegionStore::refineMesh(T_REFINER & refiner, OsmTriangulationRegionStore::MyRefineTag /*dummyTag*/) {
+	uint32_t refineCount = 0;
+	std::vector<Point> refinePoints;
+	sserialize::MinMax<typename T_REFINER::Quality> qs;
+	bool trWasRefined = true;
+	typename T_REFINER::Is_bad bo(refiner.is_bad_object());
+	typename T_REFINER::Quality q = 0;
+	typename T_REFINER::Face_handle rfh;
+	for(uint32_t round(0); round < 10000 && trWasRefined; ++round) {
+		std::cout << "Trianglerefinement round " << round << std::flush;
+		trWasRefined = false;
+		qs.reset();
+		refinePoints.clear();
+		for(Finite_faces_iterator fit(finite_faces_begin()), fend(finite_faces_end()); fit != fend; ++fit) {
+			rfh = fit;
+			if (CGAL::Mesh_2::NOT_BAD != bo.operator()(rfh, q)) {
+				refinePoints.push_back(centroid(fit));
+			}
+			qs.update(q);
+		}
+		std::cout << " adds up to " << refinePoints.size() << " points. " << std::flush;
+		uint32_t tmp = m_grid.tds().insert(refinePoints.begin(), refinePoints.end());
+		refineCount += tmp;
+		trWasRefined = refinePoints.size();
+		std::cout << "Added " << tmp << " extra points. Quality: min=" << qs.min() << "max=" << qs.max() << std::endl;
+	}
+	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
+}
+
+
+template<typename TDummy, typename T_TRIANG_REFINER, typename T_REFINEMENT_ALGO_TAG>
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria, T_REFINEMENT_ALGO_TAG dummyTag) {
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
@@ -316,25 +498,8 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	}
 	
 	//refine the triangulation
-	{
-		uint32_t refineCount = 0;
-		std::vector<Point> refinePoints;
-		bool trWasRefined = true;
-		for(uint32_t round(0); round < 10000 && trWasRefined; ++round) {
-			std::cout << "Trianglerefinement round " << round << std::flush;
-			trWasRefined = false;
-			refinePoints.clear();
-			for(Finite_faces_iterator fit(finite_faces_begin()), fend(finite_faces_end()); fit != fend; ++fit) {
-				if (triangRefiner(fit)) {
-					refinePoints.push_back(centroid(fit));
-				}
-			}
-			uint32_t tmp = m_grid.tds().insert(refinePoints.begin(), refinePoints.end());
-			refineCount = tmp;
-			trWasRefined = refinePoints.size();
-			std::cout << " added" << tmp << " extra points" << std::endl;
-		};
-		std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
+	if (meshCriteria) {
+		refineMesh(*meshCriteria, dummyTag);
 	}
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
