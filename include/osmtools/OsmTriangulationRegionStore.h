@@ -205,6 +205,15 @@ public:
 		TDS * m_tds;
 		Is_bad(double maxDist, const sserialize::spatial::DistanceCalculator & dc, TDS * tds) : MyParentClass::Is_bad(dc), m_s(maxDist), m_tds(tds) {}
 		
+		inline Quality quality(CGAL::Mesh_2::Face_badness fb) const {
+			if (fb == CGAL::Mesh_2::NOT_BAD) {
+				return m_s;
+			}
+			else {
+				return std::numeric_limits<double>::max();
+			}
+		}
+		
 		CGAL::Mesh_2::Face_badness operator()(Quality q) const {
 			if (q > m_s) {
 				return CGAL::Mesh_2::IMPERATIVELY_BAD;
@@ -249,6 +258,35 @@ private:
 public:
 	LipschitzMeshCriteria(double maxSlope, TDS * tds) : m_s(maxSlope), m_tds(tds) {}
 	Is_bad is_bad_object() const { return Is_bad(m_s, MyParentClass::dc(), m_tds); }
+};
+
+template<typename T_BASE_MESH_CRITERIA>
+class RefineTrianglesWithCellIdMeshCriteria: public T_BASE_MESH_CRITERIA {
+public:
+	typedef T_BASE_MESH_CRITERIA MyParentClass;
+	typedef typename MyParentClass::Face_handle Face_handle;
+	typedef typename MyParentClass::Point Point;
+	typedef typename MyParentClass::Quality Quality;
+	struct Is_bad: MyParentClass::Is_bad {
+		Is_bad(const typename MyParentClass::Is_bad & base) : MyParentClass::Is_bad(base) {}
+		
+		CGAL::Mesh_2::Face_badness operator()(Quality q) const {
+			return MyParentClass::Is_bad::operator()(q);
+		}
+		
+		CGAL::Mesh_2::Face_badness operator()(Face_handle fh, Quality & q) {
+			if (fh->info().hasCellId()) {
+				return MyParentClass::Is_bad::operator()(fh, q);
+			}
+			else {
+				q = MyParentClass::Is_bad::quality(CGAL::Mesh_2::NOT_BAD);
+				return CGAL::Mesh_2::NOT_BAD;
+			}
+		};
+	};
+public:
+	RefineTrianglesWithCellIdMeshCriteria(const MyParentClass & base) : MyParentClass(base) {}
+	Is_bad is_bad_object() const { return Is_bad(MyParentClass::is_bad_object()); }
 };
 
 }}//end namespace detail::OsmTriangulationRegionStore
@@ -320,9 +358,10 @@ public:
 	
 	typedef detail::OsmTriangulationRegionStore::CentroidDistanceMeshCriteria<CDT> CentroidDistanceMeshCriteria;
 	typedef detail::OsmTriangulationRegionStore::LipschitzMeshCriteria<CDT> LipschitzMeshCriteria;
+	//If this tat is selected, then MyRefineTag is mandatory
+	typedef detail::OsmTriangulationRegionStore::RefineTrianglesWithCellIdMeshCriteria<LipschitzMeshCriteria> RegionOnlyLipschitzMeshCriteria;
 	
-	struct CGALRefineTag {};
-	struct MyRefineTag {};
+	typedef enum { CGALRefineTag, MyRefineTag } RefinementAlgoTags;
 	
 	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
 public:
@@ -349,11 +388,14 @@ private:
 	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
 
 	template<typename T_REFINER>
-	void refineMesh(T_REFINER & refiner, CGALRefineTag dummyTag);
+	void cgalRefineMesh(T_REFINER & refiner);
 
-	template<typename T_REFINER>
-	void refineMesh(T_REFINER & refiner, MyRefineTag dummyTag);
-	
+	template<typename T_REFINER, typename T_Dummy>
+	void myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount);
+
+	void setInfinteFacesCellIds();
+	template<typename T_DUMMY>
+	void assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount);
 private:
 	GridLocator m_grid;
 	RegionListContainer m_cellLists;
@@ -361,8 +403,6 @@ private:
 	std::vector<uint32_t> m_refinedCellIdToUnrefined;
 	bool m_isConnected;
 	std::mutex m_lock;
-private:
-	void setInfinteFacesCellIds();
 public:
 	OsmTriangulationRegionStore();
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
@@ -374,8 +414,8 @@ public:
 	inline uint32_t unrefinedCellCount() const { return m_cellIdToCellList.size(); }
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
 	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2
-	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::LipschitzMeshCriteria, typename T_REFINEMENT_ALGO_TAG = MyRefineTag>
-	void init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria = 0, T_REFINEMENT_ALGO_TAG dummyTag = T_REFINEMENT_ALGO_TAG());
+	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::RegionOnlyLipschitzMeshCriteria>
+	void init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria = 0, RefinementAlgoTags refineAlgo = MyRefineTag);
 	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
 
 	void makeConnected();
@@ -417,13 +457,14 @@ public:
 };
 
 template<typename T_REFINER>
-void OsmTriangulationRegionStore::refineMesh(T_REFINER & refiner, OsmTriangulationRegionStore::CGALRefineTag /*dummyTag*/) {
+void OsmTriangulationRegionStore::cgalRefineMesh(T_REFINER & /*refiner*/) {
 // 		CGAL::refine_Delaunay_mesh_2(m_grid.tds(), CGAL::Delaunay_mesh_size_criteria_2<CDT>(0.125, 0.5));
-		CGAL::refine_Delaunay_mesh_2(m_grid.tds(), refiner);
+	//this only workd with an epic kernel, but the normal default triangulation needs an epec kernel
+// 		CGAL::refine_Delaunay_mesh_2(m_grid.tds(), refiner);
 }
 
-template<typename T_REFINER>
-void OsmTriangulationRegionStore::refineMesh(T_REFINER & refiner, OsmTriangulationRegionStore::MyRefineTag /*dummyTag*/) {
+template<typename T_REFINER, typename T_Dummy>
+void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount) {
 	uint32_t refineCount = 0;
 	std::vector<Point> refinePoints;
 	sserialize::MinMax<typename T_REFINER::Quality> qs;
@@ -448,13 +489,101 @@ void OsmTriangulationRegionStore::refineMesh(T_REFINER & refiner, OsmTriangulati
 		refineCount += tmp;
 		trWasRefined = refinePoints.size();
 		std::cout << "Added " << tmp << " extra points. Quality: min=" << qs.min() << "max=" << qs.max() << std::endl;
+		assignCellIds(grt, threadCount);
 	}
 	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
 }
 
+template<typename T_DUMMY>
+void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount) {
+	struct Context {
+		std::unordered_map<RegionList, uint32_t> cellListToCellId;
+		OsmGridRegionTree<T_DUMMY> * grt;
+		RegionListContainer * p_cellLists;
+		sserialize::ProgressInfo pinfo;
+		uint32_t finishedFaces;
+		Triangulation::Finite_faces_iterator facesIt;
+		Triangulation::Finite_faces_iterator facesEnd;
+		std::mutex lock;
+	} ctx;
+	ctx.grt = &grt;
+	ctx.p_cellLists = &m_cellLists;
+	ctx.finishedFaces = 0;
+	ctx.facesIt = m_grid.tds().finite_faces_begin();
+	ctx.facesEnd = m_grid.tds().finite_faces_end();
+	
+	setInfinteFacesCellIds();
+	//cells that are not in any region get cellid 0
+	ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
+	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
+		ctx.cellListToCellId[m_cellIdToCellList.at(i)] = i;
+	}
 
-template<typename TDummy, typename T_TRIANG_REFINER, typename T_REFINEMENT_ALGO_TAG>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria, T_REFINEMENT_ALGO_TAG dummyTag) {
+	struct WorkFunc {
+		Context * ctx;
+		std::unordered_set<uint32_t> tmpCellList;
+		Point centroid;
+		Face_handle fh;
+		WorkFunc(Context * ctx) : ctx(ctx) {}
+		WorkFunc(const WorkFunc & other) : ctx(other.ctx) {}
+		void operator()() {
+			while (true) {
+				std::unique_lock<std::mutex> lck(ctx->lock);
+				if (ctx->facesIt != ctx->facesEnd) {
+					fh = ctx->facesIt;
+					++(ctx->facesIt);
+					if (fh->info().hasCellId()) {
+						continue;
+					}
+					centroid = OsmTriangulationRegionStore::centroid(fh);
+				}
+				else {
+					return;
+				}
+				lck.unlock();
+				double x = CGAL::to_double(centroid.x());
+				double y = CGAL::to_double(centroid.y());
+				tmpCellList.clear();
+				ctx->grt->test(x, y, tmpCellList);
+				RegionList tmp(tmpCellList.begin(), tmpCellList.end());
+				std::sort(tmp.begin(), tmp.end());
+				uint32_t faceCellId = 0;
+				lck.lock();
+				if (!ctx->cellListToCellId.count(tmp)) {
+					faceCellId = ctx->cellListToCellId.size();
+					sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
+					ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
+					tmp = RegionList(ctx->p_cellLists, off, tmp.size());
+					ctx->cellListToCellId[tmp] = faceCellId;
+				}
+				else {
+					faceCellId = ctx->cellListToCellId.at(tmp);
+				}
+				assert((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
+				fh->info().setCellId(faceCellId);
+				ctx->finishedFaces += 1;
+				ctx->pinfo(ctx->finishedFaces);
+			}
+		}
+	};
+	ctx.pinfo.begin(m_grid.tds().number_of_faces(), "Setting initial cellids");
+	std::vector<std::thread> threads;
+	for(uint32_t i(0); i < threadCount; ++i) {
+		threads.push_back(std::thread(WorkFunc(&ctx)));
+	}
+	for(std::thread & x : threads) {
+		x.join();
+	}
+	ctx.pinfo.end();
+
+	m_cellIdToCellList.resize(ctx.cellListToCellId.size());
+	for(const auto & x : ctx.cellListToCellId) {
+		m_cellIdToCellList.at(x.second) = x.first;
+	}
+}
+
+template<typename TDummy, typename T_TRIANG_REFINER>
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria, RefinementAlgoTags refineAlgo) {
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
@@ -514,95 +643,26 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		std::cout << "done" << std::endl;
 	}
 	
-	//refine the triangulation
-	if (meshCriteria) {
-		refineMesh(*meshCriteria, dummyTag);
-	}
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
 	//faces that are connected and have the same region-list get the same cellid
-
-	{
-		struct Context {
-			std::unordered_map<RegionList, uint32_t> cellListToCellId;
-			OsmGridRegionTree<TDummy> * grt;
-			RegionListContainer * p_cellLists;
-			sserialize::ProgressInfo pinfo;
-			uint32_t finishedFaces;
-			Triangulation::Finite_faces_iterator facesIt;
-			Triangulation::Finite_faces_iterator facesEnd;
-			std::mutex lock;
-		} ctx;
-		ctx.grt = &grt;
-		ctx.p_cellLists = &m_cellLists;
-		ctx.finishedFaces = 0;
-		ctx.facesIt = m_grid.tds().finite_faces_begin();
-		ctx.facesEnd = m_grid.tds().finite_faces_end();
-		
-		setInfinteFacesCellIds();
-		//cells that are not in any region get cellid 0
-		ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
-		
-		struct WorkFunc {
-			Context * ctx;
-			std::unordered_set<uint32_t> tmpCellList;
-			Point centroid;
-			Face_handle fh;
-			WorkFunc(Context * ctx) : ctx(ctx) {}
-			WorkFunc(const WorkFunc & other) : ctx(other.ctx) {}
-			void operator()() {
-				while (true) {
-					std::unique_lock<std::mutex> lck(ctx->lock);
-					if (ctx->facesIt != ctx->facesEnd) {
-						fh = ctx->facesIt;
-						++(ctx->facesIt);
-						centroid = OsmTriangulationRegionStore::centroid(fh);
-					}
-					else {
-						return;
-					}
-					lck.unlock();
-					double x = CGAL::to_double(centroid.x());
-					double y = CGAL::to_double(centroid.y());
-					tmpCellList.clear();
-					ctx->grt->test(x, y, tmpCellList);
-					RegionList tmp(tmpCellList.begin(), tmpCellList.end());
-					std::sort(tmp.begin(), tmp.end());
-					uint32_t faceCellId = 0;
-					lck.lock();
-					if (!ctx->cellListToCellId.count(tmp)) {
-						faceCellId = ctx->cellListToCellId.size();
-						sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
-						ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
-						tmp = RegionList(ctx->p_cellLists, off, tmp.size());
-						ctx->cellListToCellId[tmp] = faceCellId;
-					}
-					else {
-						faceCellId = ctx->cellListToCellId.at(tmp);
-					}
-					assert((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
-					fh->info().setCellId(faceCellId);
-					ctx->finishedFaces += 1;
-					ctx->pinfo(ctx->finishedFaces);
-				}
-			}
-		};
-		ctx.pinfo.begin(m_grid.tds().number_of_faces(), "Setting initial cellids");
-		std::vector<std::thread> threads;
-		for(uint32_t i(0); i < threadCount; ++i) {
-			threads.push_back(std::thread(WorkFunc(&ctx)));
+	
+	assignCellIds(grt, threadCount);
+	
+	//refine the triangulation
+	if (meshCriteria) {
+		switch (refineAlgo) {
+		case MyRefineTag:
+			myRefineMesh(*meshCriteria, grt, threadCount);
+			break;
+		case CGALRefineTag:
+			cgalRefineMesh(*meshCriteria);
+			break;
+		default:
+			break;
 		}
-		for(std::thread & x : threads) {
-			x.join();
-		}
-		ctx.pinfo.end();
-
-		m_cellIdToCellList.resize(ctx.cellListToCellId.size());
-		for(const auto & x : ctx.cellListToCellId) {
-			m_cellIdToCellList.at(x.second) = x.first;
-		}
-		
 	}
+	
 	m_refinedCellIdToUnrefined.reserve(m_cellIdToCellList.size());
 	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
 		m_refinedCellIdToUnrefined.push_back(i);
