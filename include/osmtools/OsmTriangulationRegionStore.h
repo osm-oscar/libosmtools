@@ -18,6 +18,7 @@
 #include <CGAL/Triangulation_euclidean_traits_2.h>
 #include <CGAL/Triangulation_2.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
+#include <CGAL/Triangulation_face_base_with_info_2.h>
 #include <CGAL/Delaunay_mesh_face_base_2.h>
 #include <CGAL/Delaunay_mesher_2.h>
 
@@ -260,6 +261,19 @@ public:
   */
 class OsmTriangulationRegionStore {
 public:
+
+	class FaceInfo {
+	private:
+		//default initialized to UnsetFacesCellId
+		uint32_t m_cellId;
+	public:
+		FaceInfo();
+		void clear();
+		inline void setCellId(uint32_t cellId) { m_cellId = cellId; }
+		inline uint32_t cellId() const { return m_cellId;}
+		inline bool hasCellId() const { return m_cellId != OsmTriangulationRegionStore::UnsetFacesCellId; }
+	};
+
 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 	typedef CGAL::Exact_intersections_tag Itag;
 // 	typedef CGAL::No_intersection_tag Itag;
@@ -273,7 +287,9 @@ public:
 
 // 	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
-	typedef CGAL::Delaunay_mesh_face_base_2<K> Fb;
+	typedef CGAL::Triangulation_face_base_with_info_2<FaceInfo, K> FbWithInfo;
+	typedef CGAL::Constrained_triangulation_face_base_2<K, FbWithInfo> CFb;
+	typedef CGAL::Delaunay_mesh_face_base_2<K, CFb> Fb;
 	typedef CGAL::Triangulation_data_structure_2<Vb, Fb> Tds;
 	typedef CGAL::Constrained_Delaunay_triangulation_2<K, Tds, Itag> CDT;
 
@@ -311,6 +327,7 @@ public:
 	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
 public:
 	static constexpr uint32_t InfiniteFacesCellId = 0xFFFFFFFF;
+	static constexpr uint32_t UnsetFacesCellId = 0xFFFFFFFE;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -339,7 +356,6 @@ private:
 	
 private:
 	GridLocator m_grid;
-	FaceCellIdMap m_faceToCellId;
 	RegionListContainer m_cellLists;
 	std::vector<RegionList> m_cellIdToCellList;
 	std::vector<uint32_t> m_refinedCellIdToUnrefined;
@@ -511,7 +527,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 			std::unordered_map<RegionList, uint32_t> cellListToCellId;
 			OsmGridRegionTree<TDummy> * grt;
 			RegionListContainer * p_cellLists;
-			FaceCellIdMap * p_faceToCellId;
 			sserialize::ProgressInfo pinfo;
 			uint32_t finishedFaces;
 			Triangulation::Finite_faces_iterator facesIt;
@@ -520,7 +535,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		} ctx;
 		ctx.grt = &grt;
 		ctx.p_cellLists = &m_cellLists;
-		ctx.p_faceToCellId = &m_faceToCellId;
 		ctx.finishedFaces = 0;
 		ctx.facesIt = m_grid.tds().finite_faces_begin();
 		ctx.facesEnd = m_grid.tds().finite_faces_end();
@@ -567,7 +581,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 						faceCellId = ctx->cellListToCellId.at(tmp);
 					}
 					assert((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
-					(*(ctx->p_faceToCellId))[fh] = faceCellId;
+					fh->info().setCellId(faceCellId);
 					ctx->finishedFaces += 1;
 					ctx->pinfo(ctx->finishedFaces);
 				}
