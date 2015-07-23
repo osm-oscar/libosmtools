@@ -424,19 +424,6 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 			if (cellSizes.at(cellId) < cellSizeTh) {
 				continue;
 			}
-			#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
-			{
-				assert(cellSizes.size() == cellCount());
-				std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
-				for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-					uint32_t fid = this->cellId(it);
-					triangCountOfCells.at(fid) += 1;
-				}
-				for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-					assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-				}
-			}
-			#endif
 			currentCells.clear();
 			newFaceCellIds.clear();
 			stack.clear();
@@ -520,20 +507,6 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 			assert(cellRep.at(cellId)->info().hasCellId() && cellRep.at(cellId)->info().cellId() == cellId);
 			
 			pinfo(cellId);
-			
-			#if defined(DEBUG_CHECK_ALL) || !defined(NDEBUG)
-			{
-				assert(cellSizes.size() == cellCount());
-				std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
-				for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-					uint32_t fid = this->cellId(it);
-					triangCountOfCells.at(fid) += 1;
-				}
-				for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-					assert(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-				}
-			}
-			#endif
 		}//end for-loop cell-loop
 		pinfo.end();
 		assert(cellRep.size() == cellSizes.size());
