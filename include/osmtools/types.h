@@ -3,7 +3,7 @@
 #include <sserialize/containers/CFLArray.h>
 #include <sserialize/spatial/GeoPolygon.h>
 #include <sserialize/spatial/GeoMultiPolygon.h>
-#include <sserialize/templated/MMVector.h>
+#include <sserialize/containers/MMVector.h>
 
 namespace osmtools {
 

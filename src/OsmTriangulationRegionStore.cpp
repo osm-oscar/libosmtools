@@ -1,5 +1,5 @@
 #include <osmtools/OsmTriangulationRegionStore.h>
-#include <sserialize/utility/ThreadPool.h>
+#include <sserialize/mt/ThreadPool.h>
 
 namespace osmtools {
 namespace detail {

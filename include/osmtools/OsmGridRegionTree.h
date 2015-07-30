@@ -2,7 +2,7 @@
 #define OSM_TOOLS_GRID_REGION_TREE_H
 #include <sserialize/spatial/GridRegionTree.h>
 #include <sserialize/spatial/DistanceCalculator.h>
-#include <sserialize/utility/RangeGenerator.h>
+#include <sserialize/iterator/RangeGenerator.h>
 #include <sserialize/utility/printers.h>
 #include <osmtools/types.h>
 #include <mutex>

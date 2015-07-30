@@ -2,11 +2,11 @@
 #define LIBOSMTOOLS_OSM_TRIANGULATION_REGION_STORE_H
 #include <unordered_map>
 
-#include <sserialize/utility/hashspecializations.h>
-#include <sserialize/utility/TimeMeasuerer.h>
+#include <sserialize/algorithm/hashspecializations.h>
+#include <sserialize/stats/TimeMeasuerer.h>
 #include <sserialize/utility/debug.h>
 #include <sserialize/containers/ItemIndexFactory.h>
-#include <sserialize/utility/SimpleBitVector.h>
+#include <sserialize/containers/SimpleBitVector.h>
 
 #include <osmtools/OsmGridRegionTree.h>
 #include <osmtools/TriangulationGridLocater.h>

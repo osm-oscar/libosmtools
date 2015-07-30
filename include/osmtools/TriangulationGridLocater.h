@@ -1,7 +1,7 @@
 #ifndef LIBOSMTOOLS_TRIANGLUATION_GRID_LOCATOR_H
 #define LIBOSMTOOLS_TRIANGLUATION_GRID_LOCATOR_H
 #include <sserialize/spatial/RWGeoGrid.h>
-#include <sserialize/utility/utilmath.h>
+#include <sserialize/algorithm/utilmath.h>
 #include <sserialize/Static/Triangulation.h>
 #include <sserialize/Static/TriangulationGridLocator.h>
 #include <CGAL/number_utils.h>
