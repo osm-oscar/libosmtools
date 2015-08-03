@@ -1,5 +1,6 @@
 #include <osmtools/OsmTriangulationRegionStore.h>
 #include <sserialize/mt/ThreadPool.h>
+#include <sserialize/Static/TRACGraph.h>
 
 namespace osmtools {
 namespace detail {
@@ -111,6 +112,16 @@ CellGraph& CellGraph::operator=(const CellGraph & other) {
 		cn.rebind(m_nodePtrs);
 	}
 	return *this;
+}
+
+sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& dest) const {
+	dest.put(1); //Version
+	{
+		std::vector<uint8_t> bitConfig(2, 0);
+		for(uint32_t i(0), s(size()); i < s; ++i) {
+			
+		}
+	}
 }
 
 }}//end namespace detail::OsmTriangulationRegionStore
@@ -603,7 +614,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 	sserialize::BoundedCompactUintArray::create(m_refinedCellIdToUnrefined, dest);
 	{//faceId->cellId
 		std::vector<uint32_t> faceId2CellId(m_grid.tds().number_of_faces());
-		uint32_t numFiniteFaces;
+		uint32_t numFiniteFaces = 0;
 		for(Finite_faces_iterator fit(m_grid.tds().finite_faces_begin()), fend(m_grid.tds().finite_faces_end()); fit != fend; ++fit) {
 			++numFiniteFaces;
 			assert(face2FaceId.is_defined(fit));
@@ -623,8 +634,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 
 	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
 	uint32_t myNullCellId = myIdsToGhCellIds.size();
-	dest.putUint8(1); //version
-	dest.putUint32(myNullCellId);
+	dest.putUint8(2); //version
 	m_grid.append(dest, face2FaceId);
 	
 	std::vector<uint32_t> faceId2CellId(m_grid.tds().number_of_faces());
@@ -644,6 +654,15 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 		}
 	}
 	sserialize::BoundedCompactUintArray::create(faceId2CellId, dest);
+	//create the cell->face mappings
+	std::vector<uint32_t> cellId2FaceId(myNullCellId);
+	for(uint32_t faceId(0), s(faceId2CellId.size()); faceId < s; ++faceId) {
+		uint32_t cellId = faceId2CellId.at(faceId);
+		if (cellId != myNullCellId) {
+			cellId2FaceId.at(cellId) = faceId;
+		}
+	}
+	sserialize::BoundedCompactUintArray::create(cellId2FaceId, dest);
 	
 #ifdef DEBUG_CHECK_ALL
 	{
@@ -661,6 +680,9 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 				remappedCellId = myIdsToGhCellIds.at(myCellId);
 			}
 			assert(remappedCellId == ra.cellIdFromFaceId(sfaceId));
+		}
+		for(uint32_t cellId(0), s(cellId2FaceId.size()); cellId != s; ++cellId) {
+			assert(cellId2FaceId.at(cellId) == ra.faceIdFromCellId(cellId));
 		}
 	}
 #endif

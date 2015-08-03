@@ -124,6 +124,8 @@ public:
 	inline uint32_t size() const { return m_nodes.size(); }
 	inline const CellNode & node(uint32_t pos) const { return m_nodes.at(pos); }
 	inline CellNode & node(uint32_t pos) { return m_nodes.at(pos); }
+	
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest) const;
 };
 
 
