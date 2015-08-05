@@ -1,6 +1,6 @@
 #include <osmtools/OsmTriangulationRegionStore.h>
 #include <sserialize/mt/ThreadPool.h>
-#include <sserialize/Static/TRACGraph.h>
+#include <sserialize/Static/TracGraph.h>
 
 namespace osmtools {
 namespace detail {
