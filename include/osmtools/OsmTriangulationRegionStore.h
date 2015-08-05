@@ -125,7 +125,7 @@ public:
 	inline const CellNode & node(uint32_t pos) const { return m_nodes.at(pos); }
 	inline CellNode & node(uint32_t pos) { return m_nodes.at(pos); }
 	
-	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest) const;
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) const;
 };
 
 

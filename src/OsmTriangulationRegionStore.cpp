@@ -114,14 +114,54 @@ CellGraph& CellGraph::operator=(const CellGraph & other) {
 	return *this;
 }
 
-sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& dest) const {
+sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) const {
 	dest.put(1); //Version
-	{
-		std::vector<uint8_t> bitConfig(2, 0);
-		for(uint32_t i(0), s(size()); i < s; ++i) {
-			
-		}
+	uint32_t edgeCount = 0;
+	std::vector<uint32_t> ghCellIdsToMyIds(myIdsToGhCellIds.size(), 0xFFFFFFFF);
+	for(const std::pair<const uint32_t, uint32_t> & x : myIdsToGhCellIds) {
+		ghCellIdsToMyIds.at(x.second) = x.first;
 	}
+	
+
+	uint32_t maxNeighborCount = 0;
+	for(uint32_t cellId(0), s(size()); cellId < s; ++cellId) {
+		if (!myIdsToGhCellIds.count(cellId)) {
+			continue;
+		}
+		CellNode n(node(cellId));
+		uint32_t tmp = 0;
+		for(uint32_t nId : n) {
+			if (myIdsToGhCellIds.count(nId)) {
+				++tmp;
+			}
+		}
+		maxNeighborCount = std::max<uint32_t>(maxNeighborCount, tmp);
+		edgeCount += tmp;
+	}
+	std::vector<uint8_t> bitConfig(2, 0);
+	std::vector<uint32_t> edges;
+	bitConfig[0] = sserialize::CompactUintArray::minStorageBits(maxNeighborCount);
+	bitConfig[1] = sserialize::CompactUintArray::minStorageBits(edgeCount);
+	sserialize::MultiVarBitArrayCreator mvac(bitConfig, dest);
+	mvac.reserve(myIdsToGhCellIds.size());
+	for(uint32_t ghCellId(0), s(ghCellIdsToMyIds.size()); ghCellId < s; ++ghCellId) {
+		uint32_t myCellId = ghCellIdsToMyIds.at(ghCellId);
+		CellNode n(node(myCellId));
+		uint32_t neighborCount = 0;
+		uint32_t edgesBegin = edges.size();
+		for(uint32_t nId : n) {
+			if (myIdsToGhCellIds.count(nId)) {
+				++neighborCount;
+				edges.push_back(myIdsToGhCellIds.at(nId));
+			}
+		}
+		mvac.set(ghCellId, 0, neighborCount);
+		mvac.set(ghCellId, 1, edgesBegin);
+	}
+	mvac.flush();
+	assert(edgeCount == edges.size());
+	sserialize::BoundedCompactUintArray::create(edges, dest);
+	return dest;
 }
 
 }}//end namespace detail::OsmTriangulationRegionStore
