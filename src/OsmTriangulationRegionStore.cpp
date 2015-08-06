@@ -721,6 +721,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 			}
 			assert(remappedCellId == ra.cellIdFromFaceId(sfaceId));
 		}
+		assert(cellId2FaceId.size() == ra.cellCount());
 		for(uint32_t cellId(0), s(cellId2FaceId.size()); cellId != s; ++cellId) {
 			assert(cellId2FaceId.at(cellId) == ra.faceIdFromCellId(cellId));
 		}
