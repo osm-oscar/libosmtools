@@ -115,7 +115,7 @@ CellGraph& CellGraph::operator=(const CellGraph & other) {
 }
 
 sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) const {
-	dest.put(1); //Version
+	dest.putUint8(1); //Version
 	uint32_t edgeCount = 0;
 	std::vector<uint32_t> ghCellIdsToMyIds(myIdsToGhCellIds.size(), 0xFFFFFFFF);
 	for(const std::pair<const uint32_t, uint32_t> & x : myIdsToGhCellIds) {
