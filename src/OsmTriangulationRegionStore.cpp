@@ -115,6 +115,9 @@ CellGraph& CellGraph::operator=(const CellGraph & other) {
 }
 
 sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) const {
+	#ifdef DEBUG_CHECK_ALL
+	sserialize::UByteArrayAdapter::OffsetType debugBegin = dest.tellPutPtr();
+	#endif
 	dest.putUint8(1); //Version
 	uint32_t edgeCount = 0;
 	std::vector<uint32_t> ghCellIdsToMyIds(myIdsToGhCellIds.size(), 0xFFFFFFFF);
@@ -122,7 +125,6 @@ sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& 
 		ghCellIdsToMyIds.at(x.second) = x.first;
 	}
 	
-
 	uint32_t maxNeighborCount = 0;
 	for(uint32_t cellId(0), s(size()); cellId < s; ++cellId) {
 		if (!myIdsToGhCellIds.count(cellId)) {
@@ -158,9 +160,24 @@ sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& 
 		mvac.set(ghCellId, 0, neighborCount);
 		mvac.set(ghCellId, 1, edgesBegin);
 	}
+	#ifdef DEBUG_CHECK_ALL
+	{
+		sserialize::MultiVarBitArray mvat(mvac.flush());
+		assert(mvat.size() == myIdsToGhCellIds.size());
+	}
+	#else
 	mvac.flush();
+	#endif
 	assert(edgeCount == edges.size());
 	sserialize::BoundedCompactUintArray::create(edges, dest);
+
+	#ifdef DEBUG_CHECK_ALL
+	sserialize::UByteArrayAdapter tmp(dest);
+	tmp.setPutPtr(debugBegin);
+	tmp.shrinkToPutPtr();
+	sserialize::Static::spatial::TracGraph sg(tmp);
+	assert(sg.size() == myIdsToGhCellIds.size());
+	#endif
 	return dest;
 }
 
