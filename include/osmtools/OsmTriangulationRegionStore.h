@@ -614,6 +614,10 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 					gpToId[prevGp] = pts.size();
 					pts.push_back(Point(prevGp.first, prevGp.second));
 				}
+				if ((itGp.first < -170.0 && prevGp.first > 170.0) || (itGp.first > 170.0 && prevGp.first < -170)) {
+					std::cout << "Skipped edge crossing latitude boundary(-180->180)" << std::endl;
+					continue;
+				}
 				segments.insert( std::pair<uint32_t, uint32_t>(gpToId.at(itGp), gpToId.at(prevGp)) );
 			}
 		};
