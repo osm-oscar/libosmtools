@@ -149,6 +149,8 @@ public:
 				double tmp = m_dc.calc(latp, lonp, lat, lon);
 				q = std::max<double>(tmp, q);
 			}
+			//clip centroid distance to 1.0 (which is pretty small)
+			q = std::max<double>(q, 1.0); 
 			return q;
 		}
 	};
