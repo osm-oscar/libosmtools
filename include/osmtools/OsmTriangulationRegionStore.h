@@ -239,17 +239,6 @@ public:
 					}
 				}
 			}
-			if (maxSlope > 2200) {
-				for(int j(0); j < 3; ++j) {
-					Face_handle nfh(fh->neighbor(j));
-					if (!m_tds->is_infinite(nfh)) {
-						double nfhD = MyParentClass::Is_bad::maxCentroidDist(nfh);
-						if (myCD > nfhD) {
-							maxSlope = std::max<double>(myCD / nfhD, maxSlope);
-						}
-					}
-				}
-			}
 			q = maxSlope;
 			return (*this)(q);
 		};
