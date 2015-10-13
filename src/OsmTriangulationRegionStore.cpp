@@ -79,7 +79,7 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 
 CellGraph::CellGraph(CellGraph && other) :
 m_nodePtrs(other.m_nodePtrs),
-m_nodes(std::forward<NodesContainer>(other.m_nodes))
+m_nodes(std::move(other.m_nodes))
 {
 	other.m_nodePtrs = 0;
 }
