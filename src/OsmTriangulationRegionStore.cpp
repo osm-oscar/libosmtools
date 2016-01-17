@@ -218,6 +218,31 @@ void OsmTriangulationRegionStore::cellInfo(std::vector<Face_handle> & cellRep, s
 	}
 }
 
+std::vector< sserialize::spatial::GeoPoint > OsmTriangulationRegionStore::cellCenterOfMass() {
+	std::vector< sserialize::spatial::GeoPoint> centerOfMass(cellCount(), sserialize::spatial::GeoPoint(0.0, 0.0));
+	std::vector<uint32_t> faceCount(cellCount(), 0);
+	for(auto it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+		Point fp = centroid(it);
+		double lat = CGAL::to_double(fp.x());
+		double lon = CGAL::to_double(fp.y());
+		uint32_t cId = cellId(it);
+		auto & p = centerOfMass.at(cId);
+		p.lat() += lat;
+		p.lon() += lon;
+		faceCount.at(cId) += 1;
+	}
+	//reweight
+	for(std::size_t i(0), s(centerOfMass.size()); i < s; ++i) {
+		uint32_t fc = faceCount.at(i);
+		if (fc) {
+			auto & x = centerOfMass.at(i);
+			x.lat() /= fc;
+			x.lon() /= fc;
+		}
+	}
+	return centerOfMass;
+}
+
 void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) {
 	std::vector<Face_handle> & cgFaces = cg.m_faces;
 	CGAL::Unique_hash_map<Face_handle, uint32_t> & faceToNodeId = cg.m_faceToNodeId;
