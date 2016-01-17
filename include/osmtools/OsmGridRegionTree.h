@@ -161,7 +161,7 @@ public:
 	///polygon ids are invalid afterwards
 	template<typename T_COMPARE>
 	void sort(T_COMPARE compfunc) {
-		sserialize::RangeGenerator rg(0, size());
+		sserialize::RangeGenerator<std::size_t> rg(0, size());
 		std::vector<uint32_t> tmp(rg.cbegin(), rg.cend());
 		std::vector<value_type> * valuesPtr = &m_values;
 		std::sort(tmp.begin(), tmp.end(), [compfunc, valuesPtr](uint32_t a, uint32_t b) {
