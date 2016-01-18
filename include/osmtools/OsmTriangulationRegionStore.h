@@ -433,7 +433,7 @@ public:
 	CellGraph cellGraph();
 	void ctGraph(const Face_handle& rfh, CTGraph& cg);
 	void cellInfo(std::vector<Face_handle> & cellRepresentatives, std::vector<uint32_t> & cellSizes);
-	std::vector<sserialize::spatial::GeoPoint> cellCenterOfMass();
+	std::vector<sserialize::spatial::GeoPoint> cellCenterOfMass(const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
 
 	template<typename T_OUTPUT_ITERATOR>
 	void regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out);

@@ -218,18 +218,21 @@ void OsmTriangulationRegionStore::cellInfo(std::vector<Face_handle> & cellRep, s
 	}
 }
 
-std::vector< sserialize::spatial::GeoPoint > OsmTriangulationRegionStore::cellCenterOfMass() {
-	std::vector< sserialize::spatial::GeoPoint> centerOfMass(cellCount(), sserialize::spatial::GeoPoint(0.0, 0.0));
+std::vector< sserialize::spatial::GeoPoint > OsmTriangulationRegionStore::cellCenterOfMass(const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) {
+	std::vector< sserialize::spatial::GeoPoint> centerOfMass(myIdsToGhCellIds.size(), sserialize::spatial::GeoPoint(0.0, 0.0));
 	std::vector<uint32_t> faceCount(cellCount(), 0);
 	for(auto it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
 		Point fp = centroid(it);
 		double lat = CGAL::to_double(fp.x());
 		double lon = CGAL::to_double(fp.y());
-		uint32_t cId = cellId(it);
-		auto & p = centerOfMass.at(cId);
-		p.lat() += lat;
-		p.lon() += lon;
-		faceCount.at(cId) += 1;
+		uint32_t myCellId = cellId(it);
+		if (myIdsToGhCellIds.count(myCellId)) {
+			uint32_t ghCellId = myIdsToGhCellIds.at(myCellId);
+			auto & p = centerOfMass.at(ghCellId);
+			p.lat() += lat;
+			p.lon() += lon;
+			faceCount.at(ghCellId) += 1;
+		}
 	}
 	//reweight
 	for(std::size_t i(0), s(centerOfMass.size()); i < s; ++i) {
