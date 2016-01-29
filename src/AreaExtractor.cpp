@@ -1,4 +1,5 @@
 #include <osmtools/AreaExtractor.h>
+#include <sserialize/utility/assert.h>
 
 namespace osmtools {
 namespace detail {
@@ -55,7 +56,7 @@ bool MultiPolyResolver::closedPolysFromWays(const std::vector<RawWay> & ways, st
 			}
 		}
 		//check if way is an area and closed
-		if (activeWay.size() > 2 && activeWay.front() == activeWay.back()) {
+		if (activeWay.size() >= 4 && activeWay.front() == activeWay.back()) {
 			resultWays.push_back(activeWay);
 		}
 		else {
@@ -291,8 +292,10 @@ void AreaExtractor::RelationExtractor::operator()(osmpbf::PrimitiveBlockInputAda
 		
 		for(osmpbf::IMemberStream mem = rel.getMemberStream(); !mem.isNull(); mem.next()) {
 			if (mem.type() == osmpbf::WayPrimitive) {
-				if (ctx->rawWays.count(mem.id()) && ctx->rawWays[mem.id()].size()) {
+				if (ctx->rawWays.count(mem.id())) {
 					const detail::AreaExtractor::MultiPolyResolver::RawWay & rw = ctx->rawWays[ mem.id() ];
+					SSERIALIZE_CHEAP_ASSERT(ctx->rawWays[mem.id()].size() > 3);
+					
 					if (mem.role() == "outer" || mem.role() == "" || mem.role() == "exclave" || mem.role() == "Outer" || mem.role() == "outer:FIXME") {
 						outerWays.push_back(rw);
 					}
