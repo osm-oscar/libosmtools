@@ -592,20 +592,39 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		std::vector<Point> pts;
 		std::unordered_set< std::pair<uint32_t, uint32_t> > segments;
 		
+		auto handlePolygonPoints = [&gpToId](const GeoPolygon * gp) {
+			typename GeoPolygon::const_iterator it(gp->cbegin()), end(gp->cend());
+			for(; it != end; ++it) {
+				RawGeoPoint itGp = *it;
+				if (!gpToId.count(itGp)) {
+					gpToId[itGp] = gpToId.size();
+				}
+			}
+		};
 		
-		auto handleSinglePolygon = [&gpToId,&pts, &segments](const GeoPolygon * gp) {
+		std::cout << "OsmTriangulationRegionStore: extracting points..." << std::flush;
+		for(sserialize::spatial::GeoRegion* r : grt.regions()) {
+			if (r->type() == sserialize::spatial::GS_POLYGON) {
+				const GeoPolygon * gp = static_cast<const GeoPolygon*>(r);
+				handlePolygonPoints(gp);
+			}
+			else if (r->type() == sserialize::spatial::GS_MULTI_POLYGON) {
+				const GeoMultiPolygon * gmp = static_cast<const GeoMultiPolygon*>(r);
+				for(const GeoPolygon & gp : gmp->outerPolygons()) {
+					handlePolygonPoints(&gp);
+				}
+				for(const GeoPolygon & gp : gmp->innerPolygons()) {
+					handlePolygonPoints(&gp);
+				}
+			}
+		}
+		std::cout << "done" << std::endl;
+		
+		auto handlePolygonSegments = [&gpToId, &segments](const GeoPolygon * gp) {
 			typename GeoPolygon::const_iterator it(gp->cbegin()), prev(gp->cbegin()), end(gp->cend());
 			for(++it; it != end; ++it, ++prev) {
 				RawGeoPoint itGp = *it;
 				RawGeoPoint prevGp = *prev;
-				if (!gpToId.count(itGp)) {
-					gpToId[itGp] = pts.size();
-					pts.push_back(Point(itGp.first, itGp.second));
-				}
-				if (!gpToId.count(prevGp)) {
-					gpToId[prevGp] = pts.size();
-					pts.push_back(Point(prevGp.first, prevGp.second));
-				}
 				if ((itGp.first < -170.0 && prevGp.first > 170.0) || (itGp.first > 170.0 && prevGp.first < -170)) {
 					std::cout << "Skipped edge crossing latitude boundary(-180->180)" << std::endl;
 					continue;
@@ -617,19 +636,30 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		for(sserialize::spatial::GeoRegion* r : grt.regions()) {
 			if (r->type() == sserialize::spatial::GS_POLYGON) {
 				const GeoPolygon * gp = static_cast<const GeoPolygon*>(r);
-				handleSinglePolygon(gp);
+				handlePolygonSegments(gp);
 			}
 			else if (r->type() == sserialize::spatial::GS_MULTI_POLYGON) {
 				const GeoMultiPolygon * gmp = static_cast<const GeoMultiPolygon*>(r);
 				for(const GeoPolygon & gp : gmp->outerPolygons()) {
-					handleSinglePolygon(&gp);
+					handlePolygonSegments(&gp);
 				}
 				for(const GeoPolygon & gp : gmp->innerPolygons()) {
-					handleSinglePolygon(&gp);
+					handlePolygonSegments(&gp);
 				}
 			}
 		}
 		std::cout << "done" << std::endl;
+		
+		std::cout << "Found " << gpToId.size() << " different points creating " << segments.size() << " different segments" << std::endl;
+		
+		std::cout << "Converting points to CGAL points..." << std::flush;
+		pts.resize(gpToId.size());
+		for(const auto & x : gpToId) {
+			pts.at(x.second) = Point(x.first.first, x.first.second);
+		}
+		gpToId = decltype(gpToId)();
+		std::cout << "done" << std::endl;
+		
 #ifndef NDEBUG
 		for(const std::pair<uint32_t, uint32_t> & s : segments) {
 			assert(s.first < pts.size());
