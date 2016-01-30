@@ -597,7 +597,8 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 			for(; it != end; ++it) {
 				RawGeoPoint itGp = *it;
 				if (!gpToId.count(itGp)) {
-					gpToId[itGp] = gpToId.size();
+					uint32_t gpId = gpToId.size();
+					gpToId[itGp] = gpId;
 				}
 			}
 		};
