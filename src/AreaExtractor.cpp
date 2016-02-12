@@ -294,7 +294,10 @@ void AreaExtractor::RelationExtractor::operator()(osmpbf::PrimitiveBlockInputAda
 			if (mem.type() == osmpbf::WayPrimitive) {
 				if (ctx->rawWays.count(mem.id())) {
 					const detail::AreaExtractor::MultiPolyResolver::RawWay & rw = ctx->rawWays[ mem.id() ];
-					SSERIALIZE_CHEAP_ASSERT(ctx->rawWays[mem.id()].size() > 3);
+					
+					if (!rw.size()) {
+						continue;
+					}
 					
 					if (mem.role() == "outer" || mem.role() == "" || mem.role() == "exclave" || mem.role() == "Outer" || mem.role() == "outer:FIXME") {
 						outerWays.push_back(rw);
