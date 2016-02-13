@@ -553,7 +553,7 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 				else {
 					faceCellId = ctx->cellListToCellId.at(tmp);
 				}
-				assert((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
+				SSERIALIZE_CHEAP_ASSERT((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
 				fh->info().setCellId(faceCellId);
 				ctx->finishedFaces += 1;
 				ctx->pinfo(ctx->finishedFaces);
@@ -661,10 +661,10 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		gpToId = decltype(gpToId)();
 		std::cout << "done" << std::endl;
 		
-#ifndef NDEBUG
+#ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 		for(const std::pair<uint32_t, uint32_t> & s : segments) {
-			assert(s.first < pts.size());
-			assert(s.second < pts.size());
+			SSERIALIZE_EXPENSIVE_ASSERT(s.first < pts.size());
+			SSERIALIZE_EXPENSIVE_ASSERT(s.second < pts.size());
 		}
 #endif
 		std::cout << "OsmTriangulationRegionStore: creating triangulation..." << std::flush;
@@ -697,7 +697,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
-	assert(selfTest());
+	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 }
 
 
