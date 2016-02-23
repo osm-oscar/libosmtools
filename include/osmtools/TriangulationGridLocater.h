@@ -53,13 +53,55 @@ GridLocator<TDs>::initGrid(uint32_t latCount, uint32_t lonCount) {
 		m_grid = decltype(m_grid)(sserialize::spatial::GeoRect(lat.min(), lat.max(), lon.min(), lon.max()), latCount, lonCount);
 	}
 	Face_handle fh;
+	std::vector<std::pair<double, double>> cellPts;
 	for(uint32_t lat(0); lat < latCount; ++lat) {
 		for(uint32_t lon(0); lon < lonCount; ++lon) {
 			sserialize::spatial::GeoRect cellRect = m_grid.cellBoundary(lat, lon);
 			double midLat = cellRect.midLat();
 			double midLon = cellRect.midLon();
 			fh = m_tds.locate(Point_2(midLat, midLon), fh);
+			if (m_tds.is_infinite(fh)) {
+				//face is infinite, this either means that there are no triangle within this cell or 
+				//the midpoint of the cell is outside the triangulation
+				//we have to explore the neighborhood of this cell
+				//or the fast way: try the end points
+				cellPts.emplace_back(cellRect.maxLat(), cellRect.maxLon());
+				cellPts.emplace_back(cellRect.maxLat(), cellRect.minLon());
+				cellPts.emplace_back(cellRect.minLat(), cellRect.maxLon());
+				cellPts.emplace_back(cellRect.minLat(), cellRect.minLon());
+				for(const auto & x : cellPts) {
+					fh = m_tds.locate(Point_2(x.first, x.second), fh);
+					if (!m_tds.is_infinite(fh)) {
+						break;
+					}
+				}
+				cellPts.clear();
+			}
 			m_grid.at(midLat, midLon) = fh;
+		}
+	}
+	//now check all cells for valid entries.
+	//if a cell has an infinite face as entry, try to use the neighbors face
+	for(uint32_t lat(0); lat < latCount; ++lat) {
+		for(uint32_t lon(0); lon < lonCount; ++lon) {
+			sserialize::spatial::GeoGrid::GridBin bin = m_grid.select( m_grid.selectBin(lat, lon) );
+			if (!m_tds.is_infinite(m_grid.at(bin.tile))) {
+				continue;
+			}
+			bool notFound = false;
+			for(int i(-1); i <= 1 && notFound; ++i) {
+				for(int j(-1); j <= 1 && notFound; ++j) {
+					int32_t x = (int32_t)bin.x+i;
+					int32_t y = (int32_t)bin.y+j;
+					if (x >= 0 && y >= 0) {
+						fh = m_grid.at((uint32_t)x, (uint32_t)y);
+						if (!m_tds.is_infinite(fh)) {
+							m_grid.at(bin.tile) = fh;
+							notFound = false;
+						}
+					}
+				}
+			}
 		}
 	}
 }
