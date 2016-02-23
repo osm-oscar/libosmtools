@@ -75,7 +75,7 @@ GridLocator<TDs>::locate(double x, double y) const {
 template<typename TDs>
 sserialize::UByteArrayAdapter&
 GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator<TDs>::Face_handle, uint32_t > & face2FaceId) {
-#ifdef DEBUG_CHECK_ALL
+#ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	sserialize::UByteArrayAdapter::OffsetType initialPutPtr = dest.tellPutPtr();
 #endif
 	dest.putUint8(1);//version
@@ -88,7 +88,7 @@ GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_
 	sserialize::Static::ArrayCreator<uint32_t> ac(dest);
 	for(uint32_t i(0), s(m_grid.tileCount()); i < s; ++i) {
 		const Face_handle & fh = m_grid.binAt(i);
-		assert(face2FaceId.is_defined(fh) || m_tds.is_infinite(fh));
+		SSERIALIZE_CHEAP_ASSERT(face2FaceId.is_defined(fh) || m_tds.is_infinite(fh));
 		uint32_t faceId = sserialize::Static::spatial::Triangulation::NullFace;
 		if (face2FaceId.is_defined(fh)) {
 			faceId = face2FaceId[fh];
@@ -97,21 +97,21 @@ GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_
 	}
 	ac.flush();
 	
-#ifdef DEBUG_CHECK_ALL
+#ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	{
 		sserialize::UByteArrayAdapter tmp(dest);
 		tmp.setPutPtr(initialPutPtr);
 		tmp.shrinkToPutPtr();
 		sserialize::Static::spatial::TriangulationGridLocator str(tmp);
-		assert(str.grid().tileCount() == m_grid.tileCount());
+		SSERIALIZE_EXPENSIVE_ASSERT_EQUAL(str.grid().tileCount(), m_grid.tileCount());
 		for(uint32_t i(0), s(m_grid.tileCount()); i < s; ++i) {
 			Face_handle fh = m_grid.at(i);
 			uint32_t myFaceId = sserialize::Static::spatial::Triangulation::NullFace;
 			if (face2FaceId.is_defined(fh)) {
 				myFaceId = face2FaceId[fh];
 			}
-			assert(str.grid().at(i) == myFaceId);
-			assert(face2FaceId.is_defined(fh) || m_tds.is_infinite(fh));
+			SSERIALIZE_EXPENSIVE_ASSERT_EQUAL(str.grid().at(i), myFaceId);
+			SSERIALIZE_EXPENSIVE_ASSERT(face2FaceId.is_defined(fh) || m_tds.is_infinite(fh));
 		}
 	}
 #endif
