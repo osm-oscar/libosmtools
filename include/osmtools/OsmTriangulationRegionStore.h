@@ -627,7 +627,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 				RawGeoPoint itGp = *it;
 				RawGeoPoint prevGp = *prev;
 				if ((itGp.first < -170.0 && prevGp.first > 170.0) || (itGp.first > 170.0 && prevGp.first < -170)) {
-					std::cout << "Skipped edge crossing latitude boundary(-180->180)" << std::endl;
+					std::cout << "Skipped edge crossing latitude boundary(-180->180)\n";
 					continue;
 				}
 				segments.insert( std::pair<uint32_t, uint32_t>(gpToId.at(itGp), gpToId.at(prevGp)) );

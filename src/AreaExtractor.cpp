@@ -60,7 +60,7 @@ bool MultiPolyResolver::closedPolysFromWays(const std::vector<RawWay> & ways, st
 			resultWays.push_back(activeWay);
 		}
 		else {
-// 			std::cout << "Unclosed way detected, discarding" << std::endl;
+// 			std::cout << "Unclosed way detected, discarding\n";
 			allOk = false;
 		}
 	}
@@ -73,7 +73,7 @@ bool MultiPolyResolver::closedPolysFromWays(const std::vector<RawWay> & ways, st
 bool MultiPolyResolver::multiPolyFromWays(const std::vector<RawWay> & innerIn, const std::vector<RawWay> & outerIn, std::vector<RawWay> & innerOut, std::vector<RawWay> & outerOut) {
 	using std::swap;
 	if (!outerIn.size()) {
-		std::cout << "MultiPolyResolver::multiPolyFromWays: outerIn is empty" << std::endl;
+		std::cout << "MultiPolyResolver::multiPolyFromWays: outerIn is empty\n";
 		return false;
 	}
 	
@@ -196,7 +196,7 @@ void AreaExtractor::WayExtractor::operator()(osmpbf::PrimitiveBlockInputAdaptor&
 					gpops.push_back(ctx->nodes[wr]);
 				}
 				else {
-					std::cout << "Way has missing node" << std::endl;
+					std::cout << "Way has missing node\n";
 					break;
 				}
 			}
@@ -306,7 +306,7 @@ void AreaExtractor::RelationExtractor::operator()(osmpbf::PrimitiveBlockInputAda
 						innerWays.push_back(rw);
 					}
 					else {
-						std::cout << "Illegal role in relation " << rel.id() << ": " << mem.role() << std::endl;
+						std::cout << "Illegal role in relation " << rel.id() << ": " << mem.role() << '\n';
 					}
 				}
 				else {
@@ -315,7 +315,7 @@ void AreaExtractor::RelationExtractor::operator()(osmpbf::PrimitiveBlockInputAda
 			}
 		}
 		if (outerWays.size() && !detail::AreaExtractor::MultiPolyResolver::multiPolyFromWays(innerWays, outerWays, innerWays, outerWays) && allWaysAvailable) {
-			std::cout << "Failed to fully create MultiPolygon from multiple ways for relation " << rel.id() << std::endl;
+			std::cout << "Failed to fully create MultiPolygon from multiple ways for relation " << rel.id() << '\n';
 		}
 		if (outerWays.size()) {
 			std::shared_ptr<sserialize::spatial::GeoRegion> gmpo( detail::AreaExtractor::MultiPolyResolver::multiPolyFromClosedWays(innerWays, outerWays, ctx->nodes) );
