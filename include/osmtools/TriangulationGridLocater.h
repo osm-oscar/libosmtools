@@ -39,7 +39,7 @@ public:
 template<typename TDs>
 void
 GridLocator<TDs>::initGrid(uint32_t latCount, uint32_t lonCount) {
-	assert(tds().number_of_vertices());
+	SSERIALIZE_CHEAP_ASSERT(tds().number_of_vertices());
 	if (!tds().number_of_vertices()) {
 		return;
 	}
