@@ -56,8 +56,8 @@ GridLocator<TDs>::initGrid(uint32_t latCount, uint32_t lonCount) {
 	for(uint32_t lat(0); lat < latCount; ++lat) {
 		for(uint32_t lon(0); lon < lonCount; ++lon) {
 			sserialize::spatial::GeoRect cellRect = m_grid.cellBoundary(lat, lon);
-			double midLat = 0.5*(cellRect.maxLat()+cellRect.minLat());
-			double midLon = 0.5*(cellRect.maxLon()+cellRect.minLon());
+			double midLat = cellRect.midLat();
+			double midLon = cellRect.midLon();
 			fh = m_tds.locate(Point_2(midLat, midLon), fh);
 			m_grid.at(midLat, midLon) = fh;
 		}
