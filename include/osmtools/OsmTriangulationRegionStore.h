@@ -483,6 +483,7 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 		refineCount += tmp;
 		trWasRefined = refinePoints.size();
 		std::cout << "Added " << tmp << " extra points. Quality: min=" << qs.min() << "max=" << qs.max() << std::endl;
+		sserialize::Static::spatial::Triangulation::prepare(m_grid.tds());
 		assignCellIds(grt, threadCount);
 	}
 	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
@@ -671,6 +672,9 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		m_grid.tds().insert_constraints(pts.cbegin(), pts.cend(), segments.cbegin(), segments.cend());
 		std::cout << "done" << std::endl;
 	}
+	
+	//make sure that faces are representable by sserialize
+	sserialize::Static::spatial::Triangulation::prepare(m_grid.tds());
 	
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
