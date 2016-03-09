@@ -480,9 +480,10 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 		}
 		std::cout << " adds up to " << refinePoints.size() << " points. " << std::flush;
 		uint32_t tmp = m_grid.tds().insert(refinePoints.begin(), refinePoints.end());
+		//TODO:why is tmp smaller than refinePoints.size()? This should not be the case
 		refineCount += tmp;
 		trWasRefined = refinePoints.size();
-		std::cout << "Added " << tmp << " extra points. Quality: min=" << qs.min() << "max=" << qs.max() << std::endl;
+		std::cout << "Added " << tmp << " extra points. Quality: min=" << qs.min() << ", max=" << qs.max() << std::endl;
 		sserialize::Static::spatial::Triangulation::prepare(m_grid.tds());
 		assignCellIds(grt, threadCount);
 	}
