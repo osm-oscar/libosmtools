@@ -157,6 +157,12 @@ public:
 		m_regions = RegionsContainer();
 		m_values = ValuesContainer();
 	}
+	///"snap" points to the accuracy of sserialize::Static::spatial::GeoPoint
+	void snapPoints() {
+		for(Point & p : m_polygonPoints) {
+			p.snap();
+		}
+	}
 	///You should only call this prior to calling addPolygonsToRaster
 	///polygon ids are invalid afterwards
 	template<typename T_COMPARE>
