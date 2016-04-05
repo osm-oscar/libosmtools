@@ -351,7 +351,7 @@ public:
 	
 	typedef detail::OsmTriangulationRegionStore::CentroidDistanceMeshCriteria<CDT> CentroidDistanceMeshCriteria;
 	typedef detail::OsmTriangulationRegionStore::LipschitzMeshCriteria<CDT> LipschitzMeshCriteria;
-	//If this tat is selected, then MyRefineTag is mandatory
+	//If this type is selected, then MyRefineTag is mandatory
 	typedef detail::OsmTriangulationRegionStore::RefineTrianglesWithCellIdMeshCriteria<LipschitzMeshCriteria> RegionOnlyLipschitzMeshCriteria;
 	
 	typedef enum { CGALRefineTag, MyRefineTag } RefinementAlgoTags;
@@ -379,9 +379,6 @@ private:
 	static Point centroid(const Face_handle & fh);
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
 	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
-
-	template<typename T_REFINER>
-	void cgalRefineMesh(T_REFINER & refiner);
 
 	template<typename T_REFINER, typename T_Dummy>
 	void myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount);
@@ -449,13 +446,6 @@ public:
 	
 	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
 };
-
-template<typename T_REFINER>
-void OsmTriangulationRegionStore::cgalRefineMesh(T_REFINER & /*refiner*/) {
-// 		CGAL::refine_Delaunay_mesh_2(m_grid.tds(), CGAL::Delaunay_mesh_size_criteria_2<CDT>(0.125, 0.5));
-	//this only workd with an epic kernel, but the normal default triangulation needs an epec kernel
-// 		CGAL::refine_Delaunay_mesh_2(m_grid.tds(), refiner);
-}
 
 template<typename T_REFINER, typename T_Dummy>
 void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount) {
@@ -688,9 +678,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		switch (refineAlgo) {
 		case MyRefineTag:
 			myRefineMesh(*meshCriteria, grt, threadCount);
-			break;
-		case CGALRefineTag:
-			cgalRefineMesh(*meshCriteria);
 			break;
 		default:
 			break;
