@@ -405,7 +405,7 @@ public:
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
 	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2
 	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::RegionOnlyLipschitzMeshCriteria>
-	void init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria = 0, RefinementAlgoTags refineAlgo = MyRefineTag);
+	void init(OsmGridRegionTree< TDummy >& grt, uint32_t threadCount, T_TRIANG_REFINER* meshCriteria = 0, osmtools::OsmTriangulationRegionStore::RefinementAlgoTags refineAlgo = MyRefineTag, bool makeSerializable = false);
 	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
 
 	void makeConnected();
@@ -474,7 +474,6 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 		refineCount += tmp;
 		trWasRefined = refinePoints.size();
 		std::cout << "Added " << tmp << " extra points. Quality: min=" << qs.min() << ", max=" << qs.max() << std::endl;
-		sserialize::Static::spatial::Triangulation::prepare(m_grid.tds());
 		assignCellIds(grt, threadCount);
 	}
 	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
@@ -569,7 +568,7 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 }
 
 template<typename TDummy, typename T_TRIANG_REFINER>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria, RefinementAlgoTags refineAlgo) {
+void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria, RefinementAlgoTags refineAlgo, bool makeSerializable) {
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
@@ -664,9 +663,6 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		std::cout << "done" << std::endl;
 	}
 	
-	//make sure that faces are representable by sserialize
-	sserialize::Static::spatial::Triangulation::prepare(m_grid.tds());
-	
 	//we now have to assign every face its cellid
 	//a face lives in multiple regions, so every face has a unique list of region ids
 	//faces that are connected and have the same region-list get the same cellid
@@ -682,6 +678,12 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 		default:
 			break;
 		}
+	}
+	
+	if (makeSerializable) {
+		sserialize::Static::spatial::Triangulation::prepare(tds());
+		SSERIALIZE_EXPENSIVE_ASSERT(!sserialize::Static::spatial::Triangulation::prepare(tds()));
+		assignCellIds(grt, threadCount);
 	}
 	
 	m_refinedCellIdToUnrefined.reserve(m_cellIdToCellList.size());
