@@ -300,9 +300,9 @@ public:
 	public:
 		FaceInfo();
 		void clear();
-		inline void setCellId(uint32_t cellId) { m_cellId = cellId; }
-		inline uint32_t cellId() const { return m_cellId;}
-		inline bool hasCellId() const { return m_cellId != OsmTriangulationRegionStore::UnsetFacesCellId; }
+		void setCellId(uint32_t cellId);
+		uint32_t cellId() const;
+		bool hasCellId() const;
 	};
 
 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
@@ -385,7 +385,7 @@ private:
 
 	void setInfinteFacesCellIds();
 	template<typename T_DUMMY>
-	void assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount);
+	void assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount, bool reUseOld = true);
 private:
 	GridLocator m_grid;
 	RegionListContainer m_cellLists;
@@ -479,8 +479,18 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
 }
 
+///assign cellIds, while keeping the old cellIds if reUseOld is true
 template<typename T_DUMMY>
-void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount) {
+void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount, bool reUseOld) {
+	if (!reUseOld) {
+		m_cellIdToCellList.clear();
+		m_cellLists.clear();
+		m_refinedCellIdToUnrefined.clear();
+		m_isConnected = false;
+		for(All_faces_iterator it(m_grid.tds().all_faces_begin()), end(m_grid.tds().all_faces_end()); it != end; ++it) {
+			it->info().clear();
+		}
+	}
 	struct Context {
 		std::unordered_map<RegionList, uint32_t> cellListToCellId;
 		OsmGridRegionTree<T_DUMMY> * grt;
@@ -683,7 +693,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	if (makeSerializable) {
 		sserialize::Static::spatial::Triangulation::prepare(tds());
 		SSERIALIZE_EXPENSIVE_ASSERT(!sserialize::Static::spatial::Triangulation::prepare(tds()));
-		assignCellIds(grt, threadCount);
+		assignCellIds(grt, threadCount, false);
 	}
 	
 	m_refinedCellIdToUnrefined.reserve(m_cellIdToCellList.size());

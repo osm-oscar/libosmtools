@@ -187,6 +187,22 @@ OsmTriangulationRegionStore::FaceInfo::FaceInfo() :
 m_cellId(OsmTriangulationRegionStore::UnsetFacesCellId)
 {}
 
+void OsmTriangulationRegionStore::FaceInfo::clear() {
+	m_cellId = OsmTriangulationRegionStore::UnsetFacesCellId;
+}
+
+void OsmTriangulationRegionStore::FaceInfo::setCellId(uint32_t cellId) {
+	m_cellId = cellId;
+}
+
+uint32_t OsmTriangulationRegionStore::FaceInfo::cellId() const {
+	return m_cellId;
+}
+
+bool OsmTriangulationRegionStore::FaceInfo::hasCellId() const {
+	return m_cellId != OsmTriangulationRegionStore::UnsetFacesCellId;
+}
+
 OsmTriangulationRegionStore::Face_handle OsmTriangulationRegionStore::CTGraph::face(uint32_t faceNodeId) {
 	return m_faces.at(faceNodeId);
 }
@@ -776,13 +792,35 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 }
 
 bool OsmTriangulationRegionStore::selfTest() {
+	std::unordered_set<uint32_t> cellIds;
+
 	for(All_faces_iterator it(m_grid.tds().all_faces_begin()), end(m_grid.tds().all_faces_end()); it != end; ++it) {
 		if (!it->info().hasCellId()) {
-			if (m_grid.tds().is_infinite(it)) {
-				return false;
-			}
 			return false;
 		}
+		else if (!m_grid.tds().is_infinite(it)) {
+			uint32_t cellId = it->info().cellId();
+			cellIds.insert(cellId);
+		}
+		else {
+			if (it->info().cellId() != InfiniteFacesCellId) {
+				return false;
+			}
+		}
+	}
+	
+	//now check for missing cellIds
+	bool allOk = true;
+	for(uint32_t i(0), s(cellIds.size()); i < s; ++i) {
+		if (!cellIds.count(i)) {
+			std::cout << "OsmTriangulationRegionStore::selfTest: missing cellId=" << i << " out of " << cellIds.size() <<'\n';
+			allOk = false;
+		}
+	}
+	std::cout << std::flush;
+	
+	if (!allOk) {
+		return false;
 	}
 	
 	for(const Face_handle & fh : m_grid.grid().storage()) {
@@ -790,6 +828,7 @@ bool OsmTriangulationRegionStore::selfTest() {
 			return false;
 		}
 	}
+	
 	if (m_isConnected) {
 		std::vector<Face_handle> cellRepresentatives;
 		std::vector<uint32_t> cellSizes;
