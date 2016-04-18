@@ -32,6 +32,9 @@ generics::RCPtr<osmpbf::AbstractTagFilter> Base::createExtractionFilter(Extracti
 	if (extractionTypes & ET_NATURAL) {
 		areaFilter->addChild(new osmpbf::KeyOnlyTagFilter("natural"));
 	}
+	if (extractionTypes & ET_ISLAND) {
+		areaFilter->addChild(new osmpbf::KeyMultiValueTagFilter("place", {"island", "archipelago", "islet"}));
+	}
 	if (extractionTypes & ET_AREA) {
 		osmpbf::AbstractTagFilter * areaTagFilter = 0;
 		std::vector<osmpbf::AbstractTagFilter*> areaExclusions;
