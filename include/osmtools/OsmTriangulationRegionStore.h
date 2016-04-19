@@ -359,7 +359,7 @@ public:
 	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
 public:
 	static constexpr uint32_t InfiniteFacesCellId = 0xFFFFFFFF;
-	static constexpr uint32_t UnsetFacesCellId = 0xFFFFFFFE;
+	static constexpr uint32_t UnsetFacesCellId = 0xFFFFFFFE; //the E at the end here is correct!
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -404,8 +404,14 @@ public:
 	inline uint32_t unrefinedCellCount() const { return m_cellIdToCellList.size(); }
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
 	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2
-	template<typename TDummy, typename T_TRIANG_REFINER = OsmTriangulationRegionStore::RegionOnlyLipschitzMeshCriteria>
-	void init(OsmGridRegionTree< TDummy >& grt, uint32_t threadCount, T_TRIANG_REFINER* meshCriteria = 0, osmtools::OsmTriangulationRegionStore::RefinementAlgoTags refineAlgo = MyRefineTag, bool makeSerializable = false);
+	template<typename TDummy,
+		typename T_TRIANG_REFINER = OsmTriangulationRegionStore::RegionOnlyLipschitzMeshCriteria,
+		typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
+	void init(OsmGridRegionTree< TDummy >& grt,
+				uint32_t threadCount,
+				T_TRIANG_REFINER* meshCriteria = 0, osmtools::OsmTriangulationRegionStore::RefinementAlgoTags refineAlgo = MyRefineTag,
+				bool makeSerializable = false, T_REMOVED_EDGES re = T_REMOVED_EDGES());
+	
 	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
 
 	void makeConnected();
@@ -577,8 +583,15 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 	}
 }
 
-template<typename TDummy, typename T_TRIANG_REFINER>
-void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t threadCount, T_TRIANG_REFINER * meshCriteria, RefinementAlgoTags refineAlgo, bool makeSerializable) {
+template<typename TDummy, typename T_TRIANG_REFINER, typename T_REMOVED_EDGES>
+void
+OsmTriangulationRegionStore::init(
+	OsmGridRegionTree<TDummy> & grt,
+	uint32_t threadCount,
+	T_TRIANG_REFINER * meshCriteria, RefinementAlgoTags refineAlgo,
+	bool makeSerializable, T_REMOVED_EDGES re
+	)
+{
 	if (!threadCount) {
 		threadCount = std::thread::hardware_concurrency();
 	}
@@ -691,7 +704,7 @@ void OsmTriangulationRegionStore::init(OsmGridRegionTree<TDummy> & grt, uint32_t
 	}
 	
 	if (makeSerializable) {
-		sserialize::Static::spatial::Triangulation::prepare(tds());
+		sserialize::Static::spatial::Triangulation::prepare(tds(), re);
 		SSERIALIZE_EXPENSIVE_ASSERT(!sserialize::Static::spatial::Triangulation::prepare(tds()));
 		assignCellIds(grt, threadCount, false);
 	}
