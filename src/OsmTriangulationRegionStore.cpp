@@ -824,9 +824,9 @@ bool OsmTriangulationRegionStore::selfTest() {
 		}
 	}
 	
-	//now check for missing cellIds
+	//now check for missing cellIds, skip cellId=0 since there are not neccessarily faces that are not in any region
 	bool allOk = true;
-	for(uint32_t i(0), s(cellIds.size()); i < s; ++i) {
+	for(uint32_t i(1), s(cellIds.size()); i < s; ++i) {
 		if (!cellIds.count(i)) {
 			std::cout << "OsmTriangulationRegionStore::selfTest: missing cellId=" << i << " out of " << cellIds.size() <<'\n';
 			allOk = false;
