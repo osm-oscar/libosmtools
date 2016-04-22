@@ -581,6 +581,8 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 	for(const auto & x : ctx.cellListToCellId) {
 		m_cellIdToCellList.at(x.second) = x.first;
 	}
+	
+	SSERIALIZE_ASSERT(selfTest());
 }
 
 template<typename TDummy, typename T_TRIANG_REFINER, typename T_REMOVED_EDGES>
@@ -705,7 +707,6 @@ OsmTriangulationRegionStore::init(
 	
 	if (makeSerializable) {
 		sserialize::Static::spatial::Triangulation::prepare(tds(), re);
-		SSERIALIZE_EXPENSIVE_ASSERT(!sserialize::Static::spatial::Triangulation::prepare(tds()));
 		assignCellIds(grt, threadCount, false);
 	}
 	
