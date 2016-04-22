@@ -327,6 +327,8 @@ OsmTriangulationRegionStore::CellGraph OsmTriangulationRegionStore::cellGraph() 
 		return CellGraph();
 	}
 	
+	SSERIALIZE_ASSERT(selfTest());
+	
 	std::vector< std::pair<uint32_t, uint32_t> > edges;
 	{
 		std::unordered_set< std::pair<uint32_t, uint32_t> > tmp;
@@ -446,6 +448,7 @@ void OsmTriangulationRegionStore::makeConnected() {
 	if (m_isConnected) {
 		return;
 	}
+	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 	//Every cell has an id but cells that are not connected may not have different cells
 	//we now have to check for each id if the correspondig faces are all connected through cells with the same id
 	//this essential is a graph traversel to get all connected components where each face is a node and there's an edge between nodes
@@ -456,12 +459,10 @@ void OsmTriangulationRegionStore::makeConnected() {
 	std::cout << "Refining cells..." << std::flush;
 	FaceCellIdMap tmp;
 	std::vector<Face_handle> stack;
-	uint32_t cellId = 1; //faces that are not in any region are in cellid 0, no need to refine them
-	m_refinedCellIdToUnrefined.push_back(0);
-	for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
-		Face_handle rfh = it;
+	uint32_t cellId = 0;
+	auto makeCC = [&tmp, &cellId, &stack, this](Face_handle rfh) {
 		if (tmp.is_defined(rfh)) {
-			continue;
+			return;
 		}
 		//a new connected component is going to be created
 		stack.push_back(rfh);
@@ -481,10 +482,24 @@ void OsmTriangulationRegionStore::makeConnected() {
 				}
 			}
 		}
-		
 		stack.clear();
 		m_refinedCellIdToUnrefined.push_back(rfh->info().cellId());
 		++cellId;
+	};
+	
+	//first take care of all faces with cellId=0
+	for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
+		if (it->info().cellId() == 0) {
+			makeCC(it);
+		}
+	}
+	if (!m_refinedCellIdToUnrefined.size()) {
+		m_refinedCellIdToUnrefined.push_back(0);
+		++cellId;
+	}
+	//now take care of the rest
+	for(CDT::Finite_faces_iterator it(m_grid.tds().finite_faces_begin()), end(m_grid.tds().finite_faces_end()); it != end; ++it) {
+		makeCC(it);
 	}
 	SSERIALIZE_CHEAP_ASSERT(cellId == m_refinedCellIdToUnrefined.size());
 	for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
