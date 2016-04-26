@@ -18,6 +18,7 @@
 #include <CGAL/Triangulation_euclidean_traits_2.h>
 #include <CGAL/Triangulation_2.h>
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
+#include <CGAL/Constrained_triangulation_plus_2.h>
 #include <CGAL/Triangulation_face_base_with_info_2.h>
 #include <CGAL/Delaunay_mesh_face_base_2.h>
 #include <CGAL/Delaunay_mesher_2.h>
@@ -307,24 +308,18 @@ public:
 
 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 	typedef CGAL::Exact_intersections_tag Itag;
-// 	typedef CGAL::No_intersection_tag Itag;
-// 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
-// // 	typedef CGAL::Constrained_triangulation_face_base_2<K> Fb;
-// 	typedef CGAL::Delaunay_mesh_face_base_2<K> Fb;
-// 	typedef CGAL::Triangulation_data_structure_2<Vb, Fb> TDS;
-// 	typedef CGAL::Constrained_Delaunay_triangulation_2<K, TDS, Itag> CDT;
-// // 	typedef CGAL::Constrained_triangulation_plus_2<CDT> CDTP;
-
-
-// 	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
 	typedef CGAL::Triangulation_face_base_with_info_2<FaceInfo, K> FbWithInfo;
 	typedef CGAL::Constrained_triangulation_face_base_2<K, FbWithInfo> CFb;
 	typedef CGAL::Delaunay_mesh_face_base_2<K, CFb> Fb;
 	typedef CGAL::Triangulation_data_structure_2<Vb, Fb> Tds;
-	typedef CGAL::Constrained_Delaunay_triangulation_2<K, Tds, Itag> CDT;
+	typedef CGAL::Constrained_Delaunay_triangulation_2<K, Tds, Itag> CDTBase;
+	typedef CGAL::Constrained_triangulation_plus_2<CDTBase> CDTP;
 
+	//choose here to either use the normal CDT or the CDTPlus
+	typedef CDTBase CDT;
 	typedef CDT Triangulation;
+	
 	typedef Triangulation::Point Point;
 	typedef osmtools::GridLocator<Triangulation> GridLocator;
 	typedef GridLocator::Face_handle Face_handle;
