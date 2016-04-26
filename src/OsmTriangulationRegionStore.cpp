@@ -327,7 +327,7 @@ OsmTriangulationRegionStore::CellGraph OsmTriangulationRegionStore::cellGraph() 
 		return CellGraph();
 	}
 	
-	SSERIALIZE_ASSERT(selfTest());
+	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 	
 	std::vector< std::pair<uint32_t, uint32_t> > edges;
 	{

@@ -582,7 +582,7 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 		m_cellIdToCellList.at(x.second) = x.first;
 	}
 	
-	SSERIALIZE_ASSERT(selfTest());
+	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 }
 
 template<typename TDummy, typename T_TRIANG_REFINER, typename T_REMOVED_EDGES>
