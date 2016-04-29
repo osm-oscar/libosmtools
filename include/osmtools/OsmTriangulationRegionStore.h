@@ -701,7 +701,7 @@ OsmTriangulationRegionStore::init(
 	}
 	
 	if (makeSerializable) {
-		sserialize::Static::spatial::Triangulation::prepare(tds(), re, 1000);
+		sserialize::Static::spatial::Triangulation::prepare(tds(), re, 0.01);
 		assignCellIds(grt, threadCount, false);
 	}
 	
