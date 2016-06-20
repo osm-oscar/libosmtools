@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <sserialize/spatial/GeoMultiPolygon.h>
 #include <sserialize/spatial/GeoRegionStore.h>
-#include <osmpbf/osmfile.h>
+#include <osmpbf/pbistream.h>
 #include <osmpbf/primitiveblockinputadaptor.h>
 #include <osmpbf/irelation.h>
 #include <osmpbf/iway.h>
@@ -82,7 +82,7 @@ private:
 		std::unordered_map<int64_t, Point> nodes;
 		std::mutex nodesLock;
 		
-		osmpbf::OSMFileIn inFile;
+		osmpbf::PbiStream & inFile;
 		ExtractionTypes extractionTypes;
 		bool needsName;
 		generics::RCPtr<osmpbf::AbstractTagFilter> externalFilter;
@@ -94,7 +94,7 @@ private:
 		std::atomic<uint32_t> assembledRelevantWays;
 		std::atomic<uint32_t> assembledRelevantRelations;
 		
-		Context(const std::string & filename) : inFile(filename), relevantWaysSize(0), relevantRelationsSize(0), assembledRelevantWays(0), assembledRelevantRelations(0) {}
+		Context(osmpbf::PbiStream & inFile) : inFile(inFile), relevantWaysSize(0), relevantRelationsSize(0), assembledRelevantWays(0), assembledRelevantRelations(0) {}
 	};
 	struct ExtractorCallBack {
 		virtual void operator()(const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive) = 0;
@@ -158,25 +158,42 @@ public:
 	///@param filter additional AND-filter 
 	///@param numThreads number of threads, 0 for auto-detecting
 	template<typename TProcessor>
-	bool extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
+	bool extract(const std::string & inputFileName, const TProcessor & processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
+	template<typename TProcessor, typename T_INPUT_DATA>
+	bool extract(T_INPUT_DATA & inData, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
+	
 };
 
 template<typename TProcessor>
-bool AreaExtractor::extract(const std::string & inputFileName, TProcessor processor, ExtractionTypes extractionTypes, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter, uint32_t numThreads, const std::string & msg) {
+bool 
+AreaExtractor::extract(
+	const std::string & inputFileName,
+	const TProcessor & processor,
+	ExtractionTypes extractionTypes,
+	const generics::RCPtr<osmpbf::AbstractTagFilter> & filter, uint32_t numThreads,
+	const std::string & msg)
+{
+	osmpbf::OSMFileIn inFile(inputFileName);
+	if (!inFile.open()) {
+		std::cout << "Failed to open " <<  inputFileName << std::endl;
+		return false;
+	}
+	osmpbf::PbiStream is(std::move(inFile));
+	return extract<TProcessor, osmpbf::OSMFileIn>(is, processor, extractionTypes, filter, numThreads, msg);
+}
+
+
+template<typename TProcessor, typename T_INPUT_DATA>
+bool AreaExtractor::extract(T_INPUT_DATA & inData, TProcessor processor, ExtractionTypes extractionTypes, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter, uint32_t numThreads, const std::string & msg) {
 	if (! (extractionTypes & (ET_ALL_SPECIAL | ET_ALL_MULTIPOLYGONS))) {
 		return false;
 	}
 	
-	Context ctx(inputFileName);
+	Context ctx(inData);
 	ctx.extractionTypes = extractionTypes;
 	ctx.externalFilter = filter;
-	
-	osmpbf::PrimitiveBlockInputAdaptor pbi;
 
-	if (!ctx.inFile.open()) {
-		std::cout << "Failed to open " <<  inputFileName << std::endl;
-		return -1;
-	}
+
 	
 	struct MyCB: ExtractorCallBack {
 		TProcessor * processor;
@@ -244,8 +261,6 @@ bool AreaExtractor::extract(const std::string & inputFileName, TProcessor proces
 	ctx.nodes.clear();
 
 	std::cout << msg << ": Assembled " << ctx.assembledRelevantWays << "/" << ctx.relevantWaysSize << " ways and " << ctx.assembledRelevantRelations << "/" << ctx.relevantRelationsSize << " relations" << std::endl;
-	
-	ctx.inFile.close();
 	
 	return true;
 }
