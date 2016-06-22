@@ -159,8 +159,9 @@ public:
 	///@param numThreads number of threads, 0 for auto-detecting
 	template<typename TProcessor>
 	bool extract(const std::string & inputFileName, const TProcessor & processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
-	template<typename TProcessor, typename T_INPUT_DATA>
-	bool extract(T_INPUT_DATA & inData, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
+
+	template<typename TProcessor>
+	bool extract(osmpbf::PbiStream & inData, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
 	
 };
 
@@ -179,12 +180,12 @@ AreaExtractor::extract(
 		return false;
 	}
 	osmpbf::PbiStream is(std::move(inFile));
-	return extract<TProcessor, osmpbf::OSMFileIn>(is, processor, extractionTypes, filter, numThreads, msg);
+	return AreaExtractor::extract<TProcessor>(is, processor, extractionTypes, filter, numThreads, msg);
 }
 
 
-template<typename TProcessor, typename T_INPUT_DATA>
-bool AreaExtractor::extract(T_INPUT_DATA & inData, TProcessor processor, ExtractionTypes extractionTypes, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter, uint32_t numThreads, const std::string & msg) {
+template<typename TProcessor>
+bool AreaExtractor::extract(osmpbf::PbiStream & inData, TProcessor processor, ExtractionTypes extractionTypes, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter, uint32_t numThreads, const std::string & msg) {
 	if (! (extractionTypes & (ET_ALL_SPECIAL | ET_ALL_MULTIPOLYGONS))) {
 		return false;
 	}
