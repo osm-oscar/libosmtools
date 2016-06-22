@@ -46,6 +46,21 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 				}
 			}
 		}
+		//check if root is valid. Root is valid iff it has less than 3 neighbors
+		//Inner nodes can never be the root of the bfs of the diameter
+		//Thus rootNode musst be on the border which is the case iff it has less than 3 neighbors (since this is a triangulation!)
+		bool validRoot(uint32_t rootNode) const {
+			const FaceNode & rn = (*(ctx->nodes))[rootNode];
+			bool ok = false;
+			for(int j(0); j < 3; ++j) {
+				uint32_t nid = rn.neighbours[j];
+				if (nid == FaceNode::NullNeighbor) {
+					ok = true;
+					break;
+				}
+			}
+			return ok;
+		}
 		void operator()() {
 			while(true) {
 				std::unique_lock<std::mutex> lck(ctx->lock);
@@ -55,6 +70,9 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 				uint32_t myRootNode = ctx->processNode;
 				ctx->processNode += 1;
 				lck.unlock();
+				if (!validRoot(myRootNode)) {
+					continue;
+				}
 				calc(myRootNode);
 				lck.lock();
 				uint32_t maxHopDist = bfsTree.back().second;
