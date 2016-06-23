@@ -158,9 +158,13 @@ public:
 		m_values = ValuesContainer();
 	}
 	///"snap" points to the accuracy of sserialize::Static::spatial::GeoPoint
+	///This will also recalculate the bbox of all regions
 	void snapPoints() {
 		for(Point & p : m_polygonPoints) {
 			p.snap();
+		}
+		for(auto & r : regions()) {
+			r->recalculateBoundary();
 		}
 	}
 	///You should only call this prior to calling addPolygonsToRaster
