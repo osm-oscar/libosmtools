@@ -686,6 +686,9 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 }
 
+constexpr uint32_t OsmTriangulationRegionStore::InfiniteFacesCellId;
+constexpr uint32_t OsmTriangulationRegionStore::UnsetFacesCellId;
+
 OsmTriangulationRegionStore::OsmTriangulationRegionStore() :
 m_isConnected(false)
 {}
