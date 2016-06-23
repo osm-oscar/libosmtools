@@ -134,9 +134,9 @@ private:
 			throw sserialize::TypeMissMatchException("OsmGridRegionTree");
 			break;
 		}
-		assert(r->size() == p->size());
+		SSERIALIZE_CHEAP_ASSERT_EQUAL(r->size(), p->size());
 		r->recalculateBoundary();
-		assert(r->size() == p->size());
+		SSERIALIZE_CHEAP_ASSERT_EQUAL(r->size(), p->size());
 		m_regions.push_back(r);
 	}
 public:

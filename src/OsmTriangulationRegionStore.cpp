@@ -764,7 +764,6 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 }
 
 sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds) {
-// 	assert(myIdsToGhCellIds.size() <= cellCount());
 #ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	sserialize::UByteArrayAdapter::OffsetType initialOffset = dest.tellPutPtr();
 #endif
