@@ -62,7 +62,7 @@ protected:
 public:
 	CTGraphBase() {}
 	virtual ~CTGraphBase() {}
-	inline uint32_t size() const { return m_nodes.size(); }
+	inline uint32_t size() const { return (uint32_t) m_nodes.size(); }
 	inline uint32_t cellId() const { return m_cellId; }
 	///@param bfsTree (nodeId, hopdistance from faceNodeId)
 	void calcMaxHopDistance(uint32_t& maxHopDistRoot);
@@ -122,7 +122,7 @@ public:
 	CellGraph & operator=(const CellGraph & other);
 	CellGraph & operator=(CellGraph && other);
 
-	inline uint32_t size() const { return m_nodes.size(); }
+	inline uint32_t size() const { return (uint32_t) m_nodes.size(); }
 	inline const CellNode & node(uint32_t pos) const { return m_nodes.at(pos); }
 	inline CellNode & node(uint32_t pos) { return m_nodes.at(pos); }
 	
@@ -395,8 +395,8 @@ public:
 	void clear();
 	const Triangulation & tds() const { return m_grid.tds(); }
 	Triangulation & tds() { return m_grid.tds(); }
-	inline uint32_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
-	inline uint32_t unrefinedCellCount() const { return m_cellIdToCellList.size(); }
+	inline uint32_t cellCount() const { return (uint32_t) m_refinedCellIdToUnrefined.size(); }
+	inline uint32_t unrefinedCellCount() const { return (uint32_t) m_cellIdToCellList.size(); }
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
 	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2
 	template<typename TDummy,
@@ -470,7 +470,7 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 			qs.update(q);
 		}
 		std::cout << " adds up to " << refinePoints.size() << " points. " << std::flush;
-		uint32_t tmp = m_grid.tds().insert(refinePoints.begin(), refinePoints.end());
+		uint32_t tmp = (uint32_t) m_grid.tds().insert(refinePoints.begin(), refinePoints.end());
 		//TODO:why is tmp smaller than refinePoints.size()? This should not be the case
 		refineCount += tmp;
 		trWasRefined = refinePoints.size();
@@ -511,7 +511,7 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 	setInfinteFacesCellIds();
 	//cells that are not in any region get cellid 0
 	ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
-	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
+	for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
 		ctx.cellListToCellId[m_cellIdToCellList.at(i)] = i;
 	}
 
@@ -546,7 +546,7 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 				uint32_t faceCellId = 0;
 				lck.lock();
 				if (!ctx->cellListToCellId.count(tmp)) {
-					faceCellId = ctx->cellListToCellId.size();
+					faceCellId = (uint32_t) ctx->cellListToCellId.size();
 					sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
 					ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
 					tmp = RegionList(ctx->p_cellLists, off, tmp.size());
@@ -608,7 +608,7 @@ OsmTriangulationRegionStore::init(
 			for(; it != end; ++it) {
 				RawGeoPoint itGp = *it;
 				if (!gpToId.count(itGp)) {
-					uint32_t gpId = gpToId.size();
+					uint32_t gpId = (uint32_t) gpToId.size();
 					gpToId[itGp] = gpId;
 				}
 			}
@@ -706,7 +706,7 @@ OsmTriangulationRegionStore::init(
 	}
 	
 	m_refinedCellIdToUnrefined.reserve(m_cellIdToCellList.size());
-	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
+	for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
@@ -717,13 +717,13 @@ OsmTriangulationRegionStore::init(
 template<typename T_OUTPUT_ITERATOR>
 void OsmTriangulationRegionStore::regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out) {
 	std::unordered_set<uint32_t> unrefinedMatching;
-	for(uint32_t uCellId(0), s(m_cellIdToCellList.size()); uCellId < s; ++uCellId) {
+	for(uint32_t uCellId(0), s((uint32_t) m_cellIdToCellList.size()); uCellId < s; ++uCellId) {
 		const RegionList & rl = m_cellIdToCellList[uCellId];
 		if (std::find(rl.begin(), rl.end(), regionId) != rl.end()) {
 			unrefinedMatching.insert(uCellId);
 		}
 	}
-	for(uint32_t cellId(0), s(m_refinedCellIdToUnrefined.size()); cellId < s; ++cellId) {
+	for(uint32_t cellId(0), s((uint32_t) m_refinedCellIdToUnrefined.size()); cellId < s; ++cellId) {
 		if (unrefinedMatching.count(m_refinedCellIdToUnrefined[cellId])) {
 			*out = cellId;
 			++out;

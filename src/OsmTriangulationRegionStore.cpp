@@ -24,7 +24,7 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 		sserialize::SimpleBitVector processedNodes;
 		std::vector< std::pair<uint32_t, uint32_t> > bfsTree; //holds (nodeId, hopDist)
 		Worker(WorkContext * wctx) : ctx(wctx) {
-			uint32_t nodeCount = ctx->nodes->size();
+			uint32_t nodeCount = (uint32_t) ctx->nodes->size();
 			processedNodes.resize(nodeCount);
 			bfsTree.reserve(nodeCount);
 		}
@@ -163,12 +163,12 @@ sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& 
 	bitConfig[0] = sserialize::CompactUintArray::minStorageBits(maxNeighborCount);
 	bitConfig[1] = sserialize::CompactUintArray::minStorageBits(edgeCount);
 	sserialize::MultiVarBitArrayCreator mvac(bitConfig, dest);
-	mvac.reserve(myIdsToGhCellIds.size());
-	for(uint32_t ghCellId(0), s(ghCellIdsToMyIds.size()); ghCellId < s; ++ghCellId) {
+	mvac.reserve((uint32_t) myIdsToGhCellIds.size());
+	for(uint32_t ghCellId(0), s((uint32_t) ghCellIdsToMyIds.size()); ghCellId < s; ++ghCellId) {
 		uint32_t myCellId = ghCellIdsToMyIds.at(ghCellId);
 		CellNode n(node(myCellId));
 		uint32_t neighborCount = 0;
-		uint32_t edgesBegin = edges.size();
+		uint32_t edgesBegin = (uint32_t) edges.size();
 		for(uint32_t nId : n) {
 			if (myIdsToGhCellIds.count(nId)) {
 				++neighborCount;
@@ -305,7 +305,7 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 				Face_handle nfh = fh->neighbor(j);
 				SSERIALIZE_CHEAP_ASSERT(nfh->info().hasCellId());
 				if (nfh->info().cellId() == myCellId && !faceToNodeId.is_defined(nfh)) {
-					faceToNodeId[nfh] = cgFaces.size();
+					faceToNodeId[nfh] = (uint32_t) cgFaces.size();
 					cgFaces.emplace_back(nfh);
 				}
 			}
@@ -318,7 +318,7 @@ void OsmTriangulationRegionStore::ctGraph(const Face_handle & rfh, CTGraph& cg) 
 				Face_handle nfh = fh->neighbor(j);
 				SSERIALIZE_CHEAP_ASSERT(nfh->info().hasCellId());
 				if (nfh->info().cellId() == myCellId && !faceToNodeId.is_defined(nfh)) {
-					faceToNodeId[nfh] = cgFaces.size();
+					faceToNodeId[nfh] = (uint32_t) cgFaces.size();
 					cgFaces.emplace_back(nfh);
 				}
 			}
@@ -450,7 +450,7 @@ void OsmTriangulationRegionStore::clearRefinement() {
 		it->info().setCellId( m_refinedCellIdToUnrefined.at(it->info().cellId()) );
 	}
 	m_refinedCellIdToUnrefined.clear();
-	for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
+	for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	m_isConnected = false;
@@ -561,11 +561,11 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 	
 	for(uint32_t round(0); round < runs; ++round) {
 		std::cout << "Round " << round << std::endl;
-		uint32_t prevCellIdCount = cellRep.size();
+		uint32_t prevCellIdCount = (uint32_t) cellRep.size();
 		//skipt cellId=0 since that is the infinite_face
 		sserialize::ProgressInfo pinfo;
 		pinfo.begin(cellRep.size(), "Splitting");
-		for(uint32_t cellId(1), cellIdInitialSize(cellRep.size()); cellId < cellIdInitialSize; ++cellId) {
+		for(uint32_t cellId(1), cellIdInitialSize((uint32_t) cellRep.size()); cellId < cellIdInitialSize; ++cellId) {
 			if (cellSizes.at(cellId) < cellSizeTh) {
 				continue;
 			}
@@ -603,7 +603,7 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 					if (!stack.size()) {
 						break;
 					}
-					uint32_t nextHopDist = stack.size();
+					uint32_t nextHopDist = (uint32_t) stack.size();
 					
 					std::pair<uint32_t, uint32_t> & cn = stack.back();
 					const CTGraph::FaceNode & fn = cg.node(cn.first);
@@ -634,8 +634,8 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 				}
 				if (cellsTooLarge && voronoiSplitRun+1 < splitPerRun) {//find a new generator
 					std::vector<uint32_t>::const_iterator maxElem = std::max_element(hopDists.begin(), hopDists.end());
-					currentGenerator = maxElem - hopDists.begin();
-					currentCellId = m_refinedCellIdToUnrefined.size();
+					currentGenerator = (uint32_t) (maxElem - hopDists.begin());
+					currentCellId = (uint32_t) m_refinedCellIdToUnrefined.size();
 					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
 					cellSizes.push_back(0);
 					currentCells.insert(currentCellId);
@@ -743,7 +743,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 	m_grid.append(dest, face2FaceId);
 	{ //serialize the region lists
 		std::vector<uint32_t> tmp;
-		for(uint32_t i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
+		for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
 			tmp.push_back( idxFactory.addIndex(m_cellIdToCellList.at(i)) );
 		}
 		sserialize::BoundedCompactUintArray::create(tmp, dest);
@@ -769,7 +769,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 #endif
 
 	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
-	uint32_t myNullCellId = myIdsToGhCellIds.size();
+	uint32_t myNullCellId = sserialize::narrow_check<uint32_t>( myIdsToGhCellIds.size() );
 	dest.putUint8(2); //version
 	m_grid.append(dest, face2FaceId);
 	
@@ -792,7 +792,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 	sserialize::BoundedCompactUintArray::create(faceId2CellId, dest);
 	//create the cell->face mappings
 	std::vector<uint32_t> cellId2FaceId(myNullCellId);
-	for(uint32_t faceId(0), s(faceId2CellId.size()); faceId < s; ++faceId) {
+	for(uint32_t faceId(0), s((uint32_t) faceId2CellId.size()); faceId < s; ++faceId) {
 		uint32_t cellId = faceId2CellId.at(faceId);
 		if (cellId != myNullCellId) {
 			cellId2FaceId.at(cellId) = faceId;
@@ -846,7 +846,7 @@ bool OsmTriangulationRegionStore::selfTest() {
 	
 	//now check for missing cellIds, skip cellId=0 since there are not neccessarily faces that are not in any region
 	bool allOk = true;
-	for(uint32_t i(1), s(cellIds.size()); i < s; ++i) {
+	for(uint32_t i(1), s((uint32_t) cellIds.size()); i < s; ++i) {
 		if (!cellIds.count(i)) {
 			std::cout << "OsmTriangulationRegionStore::selfTest: missing cellId=" << i << " out of " << cellIds.size() <<'\n';
 			allOk = false;
@@ -870,7 +870,7 @@ bool OsmTriangulationRegionStore::selfTest() {
 		cellInfo(cellRepresentatives, cellSizes);
 		SSERIALIZE_CHEAP_ASSERT(cellRepresentatives.size() == cellSizes.size() && cellSizes.size() == cellCount());
 		CTGraph cg;
-		for(uint32_t cellId(1), s(cellRepresentatives.size()); cellId < s; ++cellId) {
+		for(uint32_t cellId(1), s((uint32_t) cellRepresentatives.size()); cellId < s; ++cellId) {
 			ctGraph(cellRepresentatives.at(cellId), cg);
 			if (cg.size() != cellSizes.at(cellId)) {
 				return false;

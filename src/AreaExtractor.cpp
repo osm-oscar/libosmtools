@@ -11,7 +11,7 @@ bool MultiPolyResolver::closedPolysFromWays(const std::vector<RawWay> & ways, st
 	ActiveWaysContainer activeWays; //contains only ways with at least two nodes
 	bool allOk = true;
 	std::vector<RawWay> resultWays;
-	for(uint32_t i = 0, s = ways.size(); i < s; ++i) {
+	for(uint32_t i = 0, s = (uint32_t) ways.size(); i < s; ++i) {
 		if (ways[i].size() > 1)
 			activeWays.insert(i);
 	}
