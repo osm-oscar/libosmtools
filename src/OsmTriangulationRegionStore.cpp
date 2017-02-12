@@ -737,10 +737,10 @@ const OsmTriangulationRegionStore::RegionList& OsmTriangulationRegionStore::regi
 	return m_cellIdToCellList.at(m_refinedCellIdToUnrefined.at(cellId) );
 }
 
-sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, sserialize::ItemIndexFactory & idxFactory) {
+sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, sserialize::ItemIndexFactory & idxFactory, sserialize::Static::spatial::Triangulation::GeometryCleanType gct) {
 	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
 	dest.putUint8(1); //version
-	m_grid.append(dest, face2FaceId);
+	m_grid.append(dest, face2FaceId, gct);
 	{ //serialize the region lists
 		std::vector<uint32_t> tmp;
 		for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
@@ -763,7 +763,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 	return dest;
 }
 
-sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds) {
+sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds, sserialize::Static::spatial::Triangulation::GeometryCleanType gct) {
 #ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	sserialize::UByteArrayAdapter::OffsetType initialOffset = dest.tellPutPtr();
 #endif
@@ -771,7 +771,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 	CGAL::Unique_hash_map<Face_handle, uint32_t> face2FaceId;
 	uint32_t myNullCellId = sserialize::narrow_check<uint32_t>( myIdsToGhCellIds.size() );
 	dest.putUint8(2); //version
-	m_grid.append(dest, face2FaceId);
+	m_grid.append(dest, face2FaceId, gct);
 	
 	std::vector<uint32_t> faceId2CellId(m_grid.tds().number_of_faces());
 	uint32_t numFiniteFaces = 0;

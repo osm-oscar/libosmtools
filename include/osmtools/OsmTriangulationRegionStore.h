@@ -441,10 +441,14 @@ public:
 	
 	bool selfTest();
 	///serializes to sserialize::Static::spatial::TriangulationRegionArrangement
-	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, sserialize::ItemIndexFactory & idxFactory);
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter& dest,
+											sserialize::ItemIndexFactory& idxFactory,
+											sserialize::Static::spatial::Triangulation::GeometryCleanType gct);
 	
 	///serializes to sserialize::Static::spatial::TriangulationGeoHierarchyArrangement
-	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter& dest,
+											const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds,
+											sserialize::Static::spatial::Triangulation::GeometryCleanType gct);
 	
 	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
 };
