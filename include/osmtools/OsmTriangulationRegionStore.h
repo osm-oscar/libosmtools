@@ -403,13 +403,15 @@ public:
 		typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
 	void init(OsmGridRegionTree< TDummy >& grt,
 				uint32_t threadCount,
-				T_TRIANG_REFINER* meshCriteria = 0, osmtools::OsmTriangulationRegionStore::RefinementAlgoTags refineAlgo = MyRefineTag,
-				bool makeSerializable = false, T_REMOVED_EDGES re = T_REMOVED_EDGES());
+				T_TRIANG_REFINER* meshCriteria = 0,
+				osmtools::OsmTriangulationRegionStore::RefinementAlgoTags refineAlgo = MyRefineTag,
+				sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType = sserialize::Static::spatial::Triangulation::GCT_NONE,
+				T_REMOVED_EDGES re = T_REMOVED_EDGES());
 	
 	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
-
+	///Splits cells into connected cells
 	void makeConnected();
-	///Splits cells into connected cells into smaller cells if they are larger than cellSizeTh
+	///First calls makeConnected(). Then splits cells into smaller cells if they are larger than cellSizeTh
 	///This is done in multiple runs where each cell is split into up to numVoronoiSplitRuns smaller cells until each cell is smaller than cellSizeTh
 	///cells are not split into equally sized cells but rather by their voronoi diagram
 	///refine cells by connectedness so that all cells form a connected polygon (with holes)
@@ -585,7 +587,7 @@ OsmTriangulationRegionStore::init(
 	OsmGridRegionTree<TDummy> & grt,
 	uint32_t threadCount,
 	T_TRIANG_REFINER * meshCriteria, RefinementAlgoTags refineAlgo,
-	bool makeSerializable, T_REMOVED_EDGES re
+	sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType, T_REMOVED_EDGES re
 	)
 {
 	if (!threadCount) {
@@ -699,8 +701,8 @@ OsmTriangulationRegionStore::init(
 		}
 	}
 	
-	if (makeSerializable) {
-		sserialize::Static::spatial::Triangulation::prepare(tds(), re, 0.01);
+	if (geoCleanType != sserialize::Static::spatial::Triangulation::GCT_NONE) {
+		sserialize::Static::spatial::Triangulation::prepare(tds(), re,  geoCleanType, 0.01);
 		assignCellIds(grt, threadCount, false);
 	}
 	
