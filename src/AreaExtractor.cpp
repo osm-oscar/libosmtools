@@ -73,7 +73,6 @@ bool MultiPolyResolver::closedPolysFromWays(const std::vector<RawWay> & ways, st
 bool MultiPolyResolver::multiPolyFromWays(const std::vector<RawWay> & innerIn, const std::vector<RawWay> & outerIn, std::vector<RawWay> & innerOut, std::vector<RawWay> & outerOut) {
 	using std::swap;
 	if (!outerIn.size()) {
-		std::cout << "MultiPolyResolver::multiPolyFromWays: outerIn is empty\n";
 		return false;
 	}
 	
@@ -305,7 +304,7 @@ void AreaExtractor::RelationExtractor::operator()(osmpbf::PrimitiveBlockInputAda
 					else if (mem.role() == "inner" || mem.role() == "enclave") {
 						innerWays.push_back(rw);
 					}
-					else {
+					else if (ctx->verbose) {
 						std::cout << "Illegal role in relation " << rel.id() << ": " << mem.role() << '\n';
 					}
 				}
@@ -315,7 +314,9 @@ void AreaExtractor::RelationExtractor::operator()(osmpbf::PrimitiveBlockInputAda
 			}
 		}
 		if (outerWays.size() && !detail::AreaExtractor::MultiPolyResolver::multiPolyFromWays(innerWays, outerWays, innerWays, outerWays) && allWaysAvailable) {
-			std::cout << "Failed to fully create MultiPolygon from multiple ways for relation " << rel.id() << '\n';
+			if (ctx->verbose) {
+				std::cerr << "Failed to fully create MultiPolygon from multiple ways for relation " << rel.id() << '\n';
+			}
 		}
 		if (outerWays.size()) {
 			std::shared_ptr<sserialize::spatial::GeoRegion> gmpo( detail::AreaExtractor::MultiPolyResolver::multiPolyFromClosedWays(innerWays, outerWays, ctx->nodes) );

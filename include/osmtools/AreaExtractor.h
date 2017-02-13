@@ -85,6 +85,7 @@ private:
 		osmpbf::PbiStream & inFile;
 		ExtractionTypes extractionTypes;
 		bool needsName;
+		bool verbose;
 		generics::RCPtr<osmpbf::AbstractTagFilter> externalFilter;
 		sserialize::ProgressInfo pinfo;
 		
@@ -152,7 +153,7 @@ private:
 		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
 	};
 public:
-	AreaExtractor() {}
+	AreaExtractor(bool verbose = false) : m_verbose(verbose) {}
 	virtual ~AreaExtractor() {}
 	///@param processor (const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive), MUST be thread-safe
 	///@param filter additional AND-filter 
@@ -162,7 +163,8 @@ public:
 
 	template<typename TProcessor>
 	bool extract(osmpbf::PbiStream & inData, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
-	
+private:
+	bool m_verbose;
 };
 
 template<typename TProcessor>
@@ -193,8 +195,7 @@ bool AreaExtractor::extract(osmpbf::PbiStream & inData, TProcessor processor, Ex
 	Context ctx(inData);
 	ctx.extractionTypes = extractionTypes;
 	ctx.externalFilter = filter;
-
-
+	ctx.verbose = m_verbose;
 	
 	struct MyCB: ExtractorCallBack {
 		TProcessor * processor;
