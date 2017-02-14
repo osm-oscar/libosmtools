@@ -436,7 +436,7 @@ uint32_t OsmTriangulationRegionStore::cellId(const OsmTriangulationRegionStore::
 }
 
 void OsmTriangulationRegionStore::clear() {
-
+	assert( m_grid.tds().is_valid() );
 	m_grid = GridLocator();
 	m_cellLists = RegionListContainer();
 	m_cellIdToCellList = decltype(m_cellIdToCellList)();
