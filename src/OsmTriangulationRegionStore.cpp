@@ -10,7 +10,8 @@ namespace OsmTriangulationRegionStore {
 constexpr uint32_t CTGraphBase::NullFace;
 constexpr uint32_t CTGraphBase::FaceNode::NullNeighbor;
 
-void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
+bool CTGraphBase::calcMaxHopDistance(uint32_t& maxHopDistRoot) {
+
 	struct WorkContext {
 		std::mutex lock;
 		uint32_t processNode;
@@ -93,11 +94,44 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 	wctx.maxHopDist = 0;
 	wctx.maxHopDistRoot = 0;
 	wctx.nodes = &m_nodes;
-
 	Worker w(&wctx);
-	sserialize::ThreadPool::execute(w, (wctx.nodes->size() > 1000 ? 0 : 1));
-	
+
+	bool hopDistIsExact = true;
+	if (size() > 50*1000) {
+		//approximate hop distance. We do this by selecting a random start node
+		//from there we calculate a bfs-tree.
+		//Use the node farthest away as a new root-node and calculate another bfs-tree
+		//We do this until the maximum hop-distance doesn't change anymore
+		//We use multiple runs with random start points to try to avoid local minima
+		std::uniform_int_distribution<int> ud(0, size()-1);
+		std::default_random_engine gen( std::chrono::system_clock::now().time_since_epoch().count() );
+		
+		uint32_t prevMaxHopDist = wctx.maxHopDist;
+		for(uint32_t run(0); run < 10; ++run) {
+			uint32_t rootNode = ud(gen);
+			//we first have to get a root node at the border
+			w.calc(rootNode);
+			rootNode = w.bfsTree.back().first;
+			while (true) {
+				SSERIALIZE_CHEAP_ASSERT(w.validRoot(rootNode));
+				w.process(rootNode);
+				if (prevMaxHopDist < wctx.maxHopDist) {
+					prevMaxHopDist = wctx.maxHopDist;
+					rootNode = w.bfsTree.back().first;
+				}
+				else {
+					break;
+				}
+			}
+		}
+		hopDistIsExact = false;
+	}
+	else {
+		//This is an O(n^2) algorithm, hence if n > 10000 we can only approximate the real maximum hop distance
+		sserialize::ThreadPool::execute(w, (wctx.nodes->size() > 1000 ? 0 : 1));
+	}
 	maxHopDistRoot = wctx.maxHopDistRoot;
+	return hopDistIsExact;
 }
 
 CellGraph::CellGraph(CellGraph && other) :

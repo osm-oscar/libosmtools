@@ -63,8 +63,10 @@ public:
 	virtual ~CTGraphBase() {}
 	inline uint32_t size() const { return (uint32_t) m_nodes.size(); }
 	inline uint32_t cellId() const { return m_cellId; }
-	///@param bfsTree (nodeId, hopdistance from faceNodeId)
-	void calcMaxHopDistance(uint32_t& maxHopDistRoot);
+	///@param maxHopDistRoot to the root node from where the bfs-tree is deepest.
+	///       This is only true if calcMaxHopDistance returned true,
+	///       otherwise it is an approximation
+	bool calcMaxHopDistance(uint32_t& maxHopDistRoot);
 	uint32_t calcDiameter(uint32_t * startNode, uint32_t * endNode);
 	const FaceNode & node(uint32_t pos) const { return m_nodes.at(pos); }
 	FaceNode & node(uint32_t pos) { return m_nodes.at(pos); }
