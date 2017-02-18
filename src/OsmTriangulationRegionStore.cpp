@@ -61,6 +61,20 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 			}
 			return ok;
 		}
+		//returns true if there are more nodes to be processed
+		void process(uint32_t myRootNode) {
+			if (!validRoot(myRootNode)) {
+				return;
+			}
+			calc(myRootNode);
+			std::unique_lock<std::mutex> lck(ctx->lock);
+			uint32_t maxHopDist = bfsTree.back().second;
+			if (maxHopDist > ctx->maxHopDist) {
+				ctx->maxHopDist = maxHopDist;
+				ctx->maxHopDistRoot = myRootNode;
+			}
+		}
+		
 		void operator()() {
 			while(true) {
 				std::unique_lock<std::mutex> lck(ctx->lock);
@@ -70,16 +84,7 @@ void CTGraphBase::calcMaxHopDistance(uint32_t & maxHopDistRoot) {
 				uint32_t myRootNode = ctx->processNode;
 				ctx->processNode += 1;
 				lck.unlock();
-				if (!validRoot(myRootNode)) {
-					continue;
-				}
-				calc(myRootNode);
-				lck.lock();
-				uint32_t maxHopDist = bfsTree.back().second;
-				if (maxHopDist > ctx->maxHopDist) {
-					ctx->maxHopDist = maxHopDist;
-					ctx->maxHopDistRoot = myRootNode;
-				}
+				process(myRootNode);
 			}
 		}
 	};
