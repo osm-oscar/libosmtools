@@ -116,7 +116,7 @@ private:
 				r = ConvertGP<osmtools::OsmGeoPolygon>::conv(m_polygonPoints, p);
 			}
 			else {
-				sserialize::TypeMissMatchException("OsmGridRegionTree");
+				throw sserialize::TypeMissMatchException("OsmGridRegionTree");
 			}
 			break;
 		case sserialize::spatial::GS_MULTI_POLYGON:
@@ -127,7 +127,7 @@ private:
 				r = ConvertGMP<osmtools::OsmGeoMultiPolygon>::conv(m_polygonPoints, m_polygonsContainer, p);
 			}
 			else {
-				sserialize::TypeMissMatchException("OsmGridRegionTree");
+				throw sserialize::TypeMissMatchException("OsmGridRegionTree");
 			}
 			break;
 		default:
