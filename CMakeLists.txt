@@ -11,6 +11,7 @@ find_package(CGAL)
 
 set(LIBOSMTOOLS_INCLUDE_DIR
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
+	${SSERIALIZE_INCLUDE_DIR}
 	CACHE STRING "libosmtools include directories"
 	FORCE
 )
@@ -23,6 +24,7 @@ set(LIBOSMTOOLS_LIBRARIES
 
 set(LIBOSMTOOLS_LINK_LIBRARIES
 	${PROJECT_NAME}
+	${SSERIALIZE_LINK_LIBRARIES}
 	"CGAL"
 	"CGAL_Core"
 	"boost_thread"
