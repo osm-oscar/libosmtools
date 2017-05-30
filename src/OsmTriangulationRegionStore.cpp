@@ -260,19 +260,6 @@ bool OsmTriangulationRegionStore::FaceInfo::hasCellId() const {
 	return m_cellId != OsmTriangulationRegionStore::UnsetFacesCellId;
 }
 
-OsmTriangulationRegionStore::Face_handle OsmTriangulationRegionStore::CTGraph::face(uint32_t faceNodeId) {
-	return m_faces.at(faceNodeId);
-}
-
-uint32_t OsmTriangulationRegionStore::CTGraph::node(const OsmTriangulationRegionStore::Face_handle& fh) {
-	if (m_faceToNodeId.is_defined(fh)) {
-		return m_faceToNodeId[fh];
-	}
-	throw std::out_of_range("OsmTriangulationRegionStore::CellGraph::node");
-	return CTGraph::NullFace;
-}
-
-
 OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const OsmTriangulationRegionStore::Face_handle& fh) {
 	return CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
 }

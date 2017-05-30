@@ -72,6 +72,29 @@ public:
 	FaceNode & node(uint32_t pos) { return m_nodes.at(pos); }
 };
 
+template<typename TDS>
+class CTGraph: public detail::OsmTriangulationRegionStore::CTGraphBase {
+public:
+	typedef typename TDS::Face_handle Face_handle;
+private:
+	friend class osmtools::OsmTriangulationRegionStore;
+private:
+	std::vector<Face_handle> m_faces;
+	CGAL::Unique_hash_map<Face_handle, uint32_t> m_faceToNodeId;
+public:
+	CTGraph() {}
+	virtual ~CTGraph() {}
+	Face_handle face(uint32_t faceNodeId) { return m_faces.at(faceNodeId); }
+	uint32_t node(const Face_handle & fh) {
+		if (m_faceToNodeId.is_defined(fh)) {
+			return m_faceToNodeId[fh];
+		}
+		throw std::out_of_range("OsmTriangulationRegionStore::CellGraph::node");
+		return CTGraph::NullFace;
+	}
+	using CTGraphBase::node;
+};
+
 //Graph of the cells of the OsmTriangulationRegionStore
 
 class CellGraph {
@@ -330,19 +353,7 @@ public:
 	typedef GridLocator::TriangulationDataStructure::All_faces_iterator All_faces_iterator;
 	typedef sserialize::SimpleBitVector SimpleBitVector;
 public:
-	class CTGraph: public detail::OsmTriangulationRegionStore::CTGraphBase {
-	private:
-		friend class OsmTriangulationRegionStore;
-	private:
-		std::vector<Face_handle> m_faces;
-		CGAL::Unique_hash_map<Face_handle, uint32_t> m_faceToNodeId;
-	public:
-		CTGraph() {}
-		virtual ~CTGraph() {}
-		Face_handle face(uint32_t faceNodeId);
-		uint32_t node(const Face_handle & fh);
-		using CTGraphBase::node;
-	};
+	typedef detail::OsmTriangulationRegionStore::CTGraph<Tds> CTGraph;
 	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
 	
 	typedef detail::OsmTriangulationRegionStore::CentroidDistanceMeshCriteria<CDT> CentroidDistanceMeshCriteria;
