@@ -697,8 +697,11 @@ OsmTriangulationRegionStore::init(
 		}
 #endif
 		std::cout << "OsmTriangulationRegionStore: creating triangulation..." << std::flush;
+		sserialize::TimeMeasurer tm;
+		tm.begin();
 		m_grid.tds().insert_constraints(pts.cbegin(), pts.cend(), segments.cbegin(), segments.cend());
-		std::cout << "done" << std::endl;
+		tm.end();
+		std::cout << "took " << tm << std::endl;
 	}
 	
 	//we now have to assign every face its cellid
