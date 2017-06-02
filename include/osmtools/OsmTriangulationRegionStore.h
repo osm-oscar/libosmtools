@@ -510,8 +510,29 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 			it->info().clear();
 		}
 	}
+	struct CellListKey {
+		uint64_t hash;
+		RegionList list;
+		CellListKey() : hash(0) {}
+		explicit CellListKey(uint64_t h, const RegionList & l) : hash(h), list(l) {}
+		explicit CellListKey(uint64_t h, RegionListContainer* c, RegionList::size_type off, RegionList::size_type size) : hash(h), list(c, off, size) {}
+		CellListKey(const CellListKey &) = default;
+		CellListKey(CellListKey &&) = default;
+		CellListKey & operator=(const CellListKey&) = default;
+		CellListKey & operator=(CellListKey&&) = default;
+		inline bool operator!=(const CellListKey & other) const { return hash != other.hash || list != other.list; }
+		inline bool operator==(const CellListKey & other) const  { return hash == other.hash && list == other.list; }
+	};
+	
+	struct CellListKeyHasher {
+		CellListKeyHasher() = default;
+		CellListKeyHasher(const CellListKeyHasher &) = default;
+		CellListKeyHasher & operator=(const CellListKeyHasher &) = default;
+		inline std::size_t operator()(const CellListKey & v) const { return v.hash; }
+	};
+	
 	struct Context {
-		std::unordered_map<RegionList, uint32_t> cellListToCellId;
+		std::unordered_map<CellListKey, uint32_t, CellListKeyHasher> cellListToCellId;
 		OsmGridRegionTree<T_DUMMY> * grt;
 		RegionListContainer * p_cellLists;
 		sserialize::ProgressInfo pinfo;
@@ -528,52 +549,80 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 	
 	setInfinteFacesCellIds();
 	//cells that are not in any region get cellid 0
-	ctx.cellListToCellId[RegionList(ctx.p_cellLists, 0, 0)] = 0;
-	for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
-		ctx.cellListToCellId[m_cellIdToCellList.at(i)] = i;
+	{
+		std::hash<RegionList> hasher;
+		{
+			RegionList tmp(ctx.p_cellLists, 0, 0);
+			ctx.cellListToCellId[CellListKey(hasher(tmp), tmp)] = 0;
+		}
+		for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
+			const auto & tmp = m_cellIdToCellList.at(i);
+			ctx.cellListToCellId[CellListKey(hasher(tmp), tmp)] = i;
+		}
 	}
 
 	struct WorkFunc {
 		Context * ctx;
-		std::unordered_set<uint32_t> tmpCellList;
+		RegionList::container_type tmpCellListContainer;
+		std::back_insert_iterator<RegionList::container_type> tmpCellListInserter;
+		std::hash<RegionList> cellListHasher;
+		CellListKey tmpCellListKey;
 		Point centroid;
 		Face_handle fh;
-		WorkFunc(Context * ctx) : ctx(ctx) {}
-		WorkFunc(const WorkFunc & other) : ctx(other.ctx) {}
+		WorkFunc(Context * ctx) : ctx(ctx), tmpCellListInserter(tmpCellListContainer) {
+			tmpCellListContainer.reserve(64);
+		}
+		WorkFunc(const WorkFunc & other) : WorkFunc(other.ctx) {}
 		void operator()() {
+			std::unique_lock<std::mutex> lck(ctx->lock);
+			lck.unlock();
 			while (true) {
-				std::unique_lock<std::mutex> lck(ctx->lock);
-				if (ctx->facesIt != ctx->facesEnd) {
+				lck.lock();
+				{
+					while (true) {
+						if (ctx->facesIt == ctx->facesEnd) {
+							return;
+						}
+						if (!ctx->facesIt->info().hasCellId()) {
+							break;
+						}
+						++(ctx->facesIt);
+					}
 					fh = ctx->facesIt;
 					++(ctx->facesIt);
-					if (fh->info().hasCellId()) {
-						continue;
-					}
 					centroid = OsmTriangulationRegionStore::centroid(fh);
 				}
-				else {
-					return;
+				lck.unlock();
+				
+				uint32_t faceCellId = 0;
+				{
+					double x = CGAL::to_double(centroid.x());
+					double y = CGAL::to_double(centroid.y());
+					tmpCellListContainer.clear();
+					ctx->grt->find(x, y, tmpCellListInserter);
+					std::sort(tmpCellListContainer.begin(), tmpCellListContainer.end());
+					SSERIALIZE_NORMAL_ASSERT(sserialize::is_strong_monotone_ascending(tmpCellListContainer.begin(), tmpCellListContainer.end()));
+					tmpCellListKey.list = RegionList(&tmpCellListContainer);
+					tmpCellListKey.hash = cellListHasher(tmpCellListKey.list);
+				}
+				
+				lck.lock();
+				{
+					auto cellListToCellIdIt = ctx->cellListToCellId.find(tmpCellListKey);
+					if (cellListToCellIdIt == ctx->cellListToCellId.end()) {
+						faceCellId = (uint32_t) ctx->cellListToCellId.size();
+						auto off = ctx->p_cellLists->size();
+						ctx->p_cellLists->push_back(tmpCellListKey.list.begin(), tmpCellListKey.list.end());
+						ctx->cellListToCellId[CellListKey(tmpCellListKey.hash, ctx->p_cellLists, off, tmpCellListKey.list.size())] = faceCellId;
+						SSERIALIZE_CHEAP_ASSERT_EQUAL(ctx->cellListToCellId.size(), faceCellId+1);
+					}
+					else {
+						faceCellId = cellListToCellIdIt->second;
+					}
 				}
 				lck.unlock();
-				double x = CGAL::to_double(centroid.x());
-				double y = CGAL::to_double(centroid.y());
-				tmpCellList.clear();
-				ctx->grt->test(x, y, tmpCellList);
-				RegionList tmp(tmpCellList.begin(), tmpCellList.end());
-				std::sort(tmp.begin(), tmp.end());
-				uint32_t faceCellId = 0;
-				lck.lock();
-				if (!ctx->cellListToCellId.count(tmp)) {
-					faceCellId = (uint32_t) ctx->cellListToCellId.size();
-					sserialize::MMVector<uint32_t>::size_type off = ctx->p_cellLists->size();
-					ctx->p_cellLists->push_back(tmp.begin(), tmp.end());
-					tmp = RegionList(ctx->p_cellLists, off, tmp.size());
-					ctx->cellListToCellId[tmp] = faceCellId;
-				}
-				else {
-					faceCellId = ctx->cellListToCellId.at(tmp);
-				}
-				SSERIALIZE_CHEAP_ASSERT((tmpCellList.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellList.size()));
+				
+				SSERIALIZE_CHEAP_ASSERT((tmpCellListKey.list.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellListKey.list.size()));
 				fh->info().setCellId(faceCellId);
 				ctx->finishedFaces += 1;
 				ctx->pinfo(ctx->finishedFaces);
@@ -592,7 +641,7 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 
 	m_cellIdToCellList.resize(ctx.cellListToCellId.size());
 	for(const auto & x : ctx.cellListToCellId) {
-		m_cellIdToCellList.at(x.second) = x.first;
+		m_cellIdToCellList.at(x.second) = x.first.list;
 	}
 	
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
