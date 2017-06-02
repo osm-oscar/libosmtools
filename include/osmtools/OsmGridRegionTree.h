@@ -231,16 +231,27 @@ public:
 	
 	///This is thread safe if you do not after calling addPolygonsToRaster()
 	///Inserts all hit regions into dest
-	template<typename T_SET_TYPE = std::set<uint32_t> >
-	void test(const Point & p, T_SET_TYPE & dest) const {
-		std::insert_iterator<T_SET_TYPE> inserter(dest, dest.end());
+	template<typename T_CONTAINER_TYPE>
+	void test(const Point & p, T_CONTAINER_TYPE & dest) const {
+		std::insert_iterator<T_CONTAINER_TYPE> inserter(dest, dest.end());
 		m_grt.find(p, inserter);
 	}
 	
 	///This is thread safe if you do not after calling addPolygonsToRaster()
 	template<typename T_SET_TYPE = std::set<uint32_t> >
 	void test(double lat, double lon, T_SET_TYPE & dest) const {
-		return test(Point(lat, lon), dest);
+		test(Point(lat, lon), dest);
+	}
+	
+	template<typename T_OUTPUT_ITERATOR>
+	void find(const Point & p, T_OUTPUT_ITERATOR & dest) const {
+		m_grt.find(p, dest);
+	}
+	
+	///This is thread safe if you do not after calling addPolygonsToRaster()
+	template<typename T_OUTPUT_ITERATOR>
+	void find(double lat, double lon, T_OUTPUT_ITERATOR & dest) const {
+		find(Point(lat, lon), dest);
 	}
 	
 	///This is thread safe if you do not after calling addPolygonsToRaster()
