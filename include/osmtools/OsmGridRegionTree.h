@@ -11,7 +11,7 @@ namespace osmtools {
 
 ///After adding regions to the grid-tree, they are converted to OsmGeoPolygon and OsmGeoMultiPolygon
 template<typename TValue>
-class OsmGridRegionTree {
+class OsmGridRegionTree final {
 public:
 	typedef sserialize::spatial::GeoPoint Point;
 	typedef TValue value_type;
@@ -154,6 +154,9 @@ public:
 		clearGRT();
 		m_polygonPoints = PointDataContainer();
 		m_polygonsContainer = PolygonsContainer();
+		for(std::vector<sserialize::spatial::GeoRegion*>::iterator it(m_regions.begin()), end(m_regions.end()); it != end; ++it) {
+			delete *it;
+		}
 		m_regions = RegionsContainer();
 		m_values = ValuesContainer();
 	}
