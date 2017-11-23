@@ -16,26 +16,34 @@ public:
 	typedef typename TDs::Face_handle Face_handle;
 	typedef typename TDs::Vertex_handle Vertex_handle;
 	typedef sserialize::spatial::RWGeoGrid<Face_handle> Grid;
-private:
-	typedef typename TriangulationDataStructure::Triangulation::Geom_traits::Point_2 Point_2;
-private:
-	TriangulationDataStructure m_tds;
-	sserialize::spatial::RWGeoGrid<Face_handle> m_grid;
 public:
 	GridLocator() {}
+	GridLocator(GridLocator && other) = default;
+	GridLocator & operator=(GridLocator && other) {
+		m_tds = std::move(other.m_tds);
+		m_grid = std::move(other.m_grid);
+		return *this;
+	}
 	void initGrid(uint32_t latCount, uint32_t lonCount);
 	inline TriangulationDataStructure & tds() { return m_tds; }
 	inline const TriangulationDataStructure & tds() const { return m_tds; }
 	inline Grid & grid() { return m_grid; }
 	inline const Grid & grid() const { return m_grid; }
-	///@thread-safety NO
+	///@thread-safety YES
 	Face_handle locate(double x, double y) const;
 	inline bool contains(double lat, double lon) { return m_grid.contains(lat, lon); }
 	///serialize this to sserialize::Static::spatial::TriangulationGridLocator
+	///@thread-safety NO
 	sserialize::UByteArrayAdapter & append( sserialize::UByteArrayAdapter& dest,
 											CGAL::Unique_hash_map< GridLocator< TDs >::Face_handle, uint32_t >& face2FaceId,
 											sserialize::Static::spatial::Triangulation::GeometryCleanType gct
 	);
+private:
+	typedef typename TriangulationDataStructure::Triangulation::Geom_traits::Point_2 Point_2;
+private:
+	TriangulationDataStructure m_tds;
+	sserialize::spatial::RWGeoGrid<Face_handle> m_grid;
+	mutable std::mutex m_lock;
 };
 
 
@@ -115,7 +123,9 @@ GridLocator<TDs>::locate(double x, double y) const {
 	if (!m_grid.contains(x,y)) {
 		return Face_handle();
 	}
-	return m_tds.locate(Point_2(x,y), m_grid.at(x,y));
+	const Face_handle & hint = m_grid.at(x,y);
+	std::lock_guard<std::mutex> lck(m_lock);
+	return m_tds.locate(Point_2(x,y), hint);
 }
 template<typename TDs>
 sserialize::UByteArrayAdapter&

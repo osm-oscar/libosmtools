@@ -747,11 +747,9 @@ void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 uint32_t OsmTriangulationRegionStore::cellId(double lat, double lon) {
 	uint32_t cellId;
 	if (m_grid.contains(lat, lon)) {
-		std::unique_lock<std::mutex> lck(m_lock);
 		Face_handle fh = m_grid.locate(lat, lon);
 		SSERIALIZE_CHEAP_ASSERT(fh->info().hasCellId());
 		cellId = fh->info().cellId();
-		lck.unlock();
 		if (cellId == InfiniteFacesCellId) {
 			cellId = 0;
 		}
