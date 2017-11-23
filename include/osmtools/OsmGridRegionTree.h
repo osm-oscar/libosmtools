@@ -196,7 +196,7 @@ public:
 	inline ValuesContainer & values() { return m_values; }
 	///this is thread-safe
 	uint32_t push_back(const sserialize::spatial::GeoRegion & p, const value_type & value) {
-		std::unique_lock<std::mutex> (m_mtx);
+		std::lock_guard<std::mutex> lck(m_mtx);
 		uint32_t pid = m_regions.size();
 		this->push_back(&p);
 		m_values.push_back(value);
@@ -204,7 +204,7 @@ public:
 	}
 	///this is thread-safe
 	uint32_t push_back(const sserialize::spatial::GeoRegion & p, value_type && value) {
-		std::unique_lock<std::mutex> lck(m_mtx);
+		std::lock_guard<std::mutex> lck(m_mtx);
 		uint32_t pid = (uint32_t) m_regions.size();
 		this->push_back(&p);
 		m_values.emplace_back(value);

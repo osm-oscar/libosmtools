@@ -162,7 +162,7 @@ void AreaExtractor::WayRefsExtractor::operator()(osmpbf::PrimitiveBlockInputAdap
 		}
 	}
 	ctx->relevantWaysSize += myRelevantWays;
-	std::unique_lock<std::mutex> lck(ctx->nodesLock);
+	std::lock_guard<std::mutex> lck(ctx->nodesLock);
 	ctx->nodes.reserve(ctx->nodes.size()+myRefs.size());
 	for(int64_t x : myRefs) {
 		ctx->nodes[x];
@@ -235,7 +235,7 @@ void AreaExtractor::RelationWaysExtractor::operator()(osmpbf::PrimitiveBlockInpu
 		}
 	}
 	ctx->relevantRelationsSize += myRelevantRelations;
-	std::unique_lock<std::mutex> lck(ctx->rawWaysLock);
+	std::lock_guard<std::mutex> lck(ctx->rawWaysLock);
 	ctx->rawWays.reserve(ctx->rawWays.size()+myWayIds.size());
 	for(int64_t x : myWayIds) {
 		ctx->rawWays[x];
@@ -260,7 +260,7 @@ void AreaExtractor::RelationWayNodeRefsExtractor::operator()(osmpbf::PrimitiveBl
 			myWayRefs.insert(way.refBegin(), way.refEnd());
 		}
 	}
-	std::unique_lock<std::mutex> lck(ctx->nodesLock);
+	std::lock_guard<std::mutex> lck(ctx->nodesLock);
 	ctx->nodes.reserve(ctx->nodes.size() + myWayRefs.size());
 	for(int64_t x : myWayRefs) {
 		ctx->nodes[x];
