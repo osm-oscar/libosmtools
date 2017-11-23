@@ -24,6 +24,8 @@
 
 #include <CGAL/Delaunay_mesh_size_criteria_2.h>
 
+//for ExtenedInt64q kernel
+#include <libratss/CGAL/ExtendedInt64Cartesian.h>
 
 #include <assert.h>
 #include <thread>
@@ -330,7 +332,9 @@ public:
 		bool hasCellId() const;
 	};
 
-	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
+// 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
+	typedef CGAL::Filtered_simple_cartesian_extended_integer_kernel K;
+// 	typedef CGAL::Simple_cartesian_extended_integer_kernel K;
 	typedef CGAL::Exact_intersections_tag Itag;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
 	typedef CGAL::Triangulation_face_base_with_info_2<FaceInfo, K> FbWithInfo;

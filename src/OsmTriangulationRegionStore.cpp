@@ -730,10 +730,14 @@ void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 		uint32_t fid = cellId(it);
 		triangCountOfCells.at(fid) += 1;
 	}
-	//skip cell 0 since that one is not created by any region ans thus should not contain many or any items
+	//skip cell 0 since that one is not created by any region and thus should not contain many or any items
 	
 	std::vector<uint32_t>::const_iterator maxElem = std::max_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
 	std::vector<uint32_t>::const_iterator minElem = std::min_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
+	
+	out << "ExtendedInt64q allocation stats: " << std::endl;
+	out << "# extended allocations: " << CGAL::Epeceik_ft::number_of_extended_allocations << '\n';
+	out << "# allocations: " << CGAL::Epeceik_ft::number_of_allocations << '\n';
 	
 	out << "Cell Triangle stats: \n";
 	out << "\tmin: " << *minElem << " at " << minElem - triangCountOfCells.begin() << "\n";
