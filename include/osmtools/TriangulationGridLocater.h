@@ -9,7 +9,7 @@
 
 namespace osmtools {
 
-template<typename TDs>
+template<typename TDs, bool TNumberTypeIsThreadSafe=false>
 class GridLocator {
 public:
 	typedef TDs TriangulationDataStructure;
@@ -35,7 +35,7 @@ public:
 	///serialize this to sserialize::Static::spatial::TriangulationGridLocator
 	///@thread-safety NO
 	sserialize::UByteArrayAdapter & append( sserialize::UByteArrayAdapter& dest,
-											CGAL::Unique_hash_map< GridLocator< TDs >::Face_handle, uint32_t >& face2FaceId,
+											CGAL::Unique_hash_map<Face_handle, uint32_t >& face2FaceId,
 											sserialize::Static::spatial::Triangulation::GeometryCleanType gct
 	);
 private:
@@ -47,9 +47,9 @@ private:
 };
 
 
-template<typename TDs>
+template<typename TDs, bool TNumberTypeIsThreadSafe>
 void
-GridLocator<TDs>::initGrid(uint32_t latCount, uint32_t lonCount) {
+GridLocator<TDs, TNumberTypeIsThreadSafe>::initGrid(uint32_t latCount, uint32_t lonCount) {
 	SSERIALIZE_CHEAP_ASSERT(tds().number_of_vertices());
 	if (!tds().number_of_vertices()) {
 		return;
@@ -117,19 +117,26 @@ GridLocator<TDs>::initGrid(uint32_t latCount, uint32_t lonCount) {
 	}
 }
 
-template<typename TDs>
-typename GridLocator<TDs>::Face_handle
-GridLocator<TDs>::locate(double x, double y) const {
+template<typename TDs, bool TNumberTypeIsThreadSafe>
+typename GridLocator<TDs, TNumberTypeIsThreadSafe>::Face_handle
+GridLocator<TDs, TNumberTypeIsThreadSafe>::locate(double x, double y) const {
 	if (!m_grid.contains(x,y)) {
 		return Face_handle();
 	}
 	const Face_handle & hint = m_grid.at(x,y);
-	std::lock_guard<std::mutex> lck(m_lock);
-	return m_tds.locate(Point_2(x,y), hint);
+	Point_2 p(x,y);
+	
+	if (TNumberTypeIsThreadSafe) {
+		return m_tds.locate(p, hint);
+	}
+	else {
+		std::lock_guard<std::mutex> lck(m_lock);
+		return m_tds.locate(p, hint);
+	}
 }
-template<typename TDs>
+template<typename TDs, bool TNumberTypeIsThreadSafe>
 sserialize::UByteArrayAdapter&
-GridLocator<TDs>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map< GridLocator<TDs>::Face_handle, uint32_t > & face2FaceId, sserialize::Static::spatial::Triangulation::GeometryCleanType gct) {
+GridLocator<TDs, TNumberTypeIsThreadSafe>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map<Face_handle, uint32_t > & face2FaceId, sserialize::Static::spatial::Triangulation::GeometryCleanType gct) {
 #ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	sserialize::UByteArrayAdapter::OffsetType initialPutPtr = dest.tellPutPtr();
 #endif
