@@ -543,7 +543,8 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 		uint32_t finishedFaces;
 		Triangulation::Finite_faces_iterator facesIt;
 		Triangulation::Finite_faces_iterator facesEnd;
-		std::mutex lock;
+		std::mutex iteratorLock;
+		std::mutex cellListLock;
 	} ctx;
 	ctx.grt = &grt;
 	ctx.p_cellLists = &m_cellLists;
@@ -578,11 +579,9 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 		}
 		WorkFunc(const WorkFunc & other) : WorkFunc(other.ctx) {}
 		void operator()() {
-			std::unique_lock<std::mutex> lck(ctx->lock);
-			lck.unlock();
 			while (true) {
-				lck.lock();
 				{
+					std::lock_guard<std::mutex> lck(ctx->iteratorLock);
 					while (true) {
 						if (ctx->facesIt == ctx->facesEnd) {
 							return;
@@ -596,7 +595,6 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 					++(ctx->facesIt);
 					centroid = OsmTriangulationRegionStore::centroid(fh);
 				}
-				lck.unlock();
 				
 				uint32_t faceCellId = 0;
 				{
@@ -610,8 +608,8 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 					tmpCellListKey.hash = cellListHasher(tmpCellListKey.list);
 				}
 				
-				lck.lock();
 				{
+					std::lock_guard<std::mutex> lck(ctx->cellListLock);
 					auto cellListToCellIdIt = ctx->cellListToCellId.find(tmpCellListKey);
 					if (cellListToCellIdIt == ctx->cellListToCellId.end()) {
 						faceCellId = (uint32_t) ctx->cellListToCellId.size();
@@ -624,7 +622,6 @@ void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt
 						faceCellId = cellListToCellIdIt->second;
 					}
 				}
-				lck.unlock();
 				
 				SSERIALIZE_CHEAP_ASSERT((tmpCellListKey.list.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellListKey.list.size()));
 				fh->info().setCellId(faceCellId);
