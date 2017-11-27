@@ -18,7 +18,10 @@ public:
 	typedef sserialize::spatial::RWGeoGrid<Face_handle> Grid;
 public:
 	GridLocator() {}
-	GridLocator(GridLocator && other) = default;
+	GridLocator(GridLocator && other) :
+	m_tds(std::move(other.m_tds)),
+	m_grid(std::move(other.m_grid))
+	{}
 	GridLocator & operator=(GridLocator && other) {
 		m_tds = std::move(other.m_tds);
 		m_grid = std::move(other.m_grid);
