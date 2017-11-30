@@ -332,8 +332,8 @@ public:
 		bool hasCellId() const;
 	};
 
-// 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
-	typedef CGAL::Filtered_simple_cartesian_extended_integer_kernel K;
+	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
+// 	typedef CGAL::Filtered_simple_cartesian_extended_integer_kernel K;
 	static constexpr bool KernelHasThreadSafeNumberType = std::is_same<K, CGAL::Filtered_simple_cartesian_extended_integer_kernel>::value;
 // 	typedef CGAL::Simple_cartesian_extended_integer_kernel K;
 	typedef CGAL::Exact_intersections_tag Itag;
