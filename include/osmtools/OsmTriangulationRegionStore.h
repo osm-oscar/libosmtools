@@ -346,7 +346,8 @@ public:
 	typedef CGAL::Constrained_triangulation_plus_2<CDTBase> CDTP;
 
 	//choose here to either use the normal CDT or the CDTPlus
-	typedef CDTP CDT;
+	//WARNING: CDTPlus results in a double free or corruption on planet!
+	typedef CDTBase CDT;
 	typedef CDT Triangulation;
 	
 	typedef Triangulation::Point Point;
