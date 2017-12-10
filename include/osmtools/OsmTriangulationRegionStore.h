@@ -371,8 +371,8 @@ public:
 	
 	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
 public:
-	static constexpr uint32_t InfiniteFacesCellId = 0xFFFFFFFF;
-	static constexpr uint32_t UnsetFacesCellId = 0xFFFFFFFE; //the E at the end here is correct!
+	static uint32_t InfiniteFacesCellId;
+	static uint32_t UnsetFacesCellId;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
