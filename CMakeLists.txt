@@ -43,6 +43,9 @@ include_directories(
 	${LIBOSMTOOLS_INCLUDE_DIR}
 )
 
+
+file(GLOB_RECURSE INCLUDE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
+
 set(LIB_SOURCES_CPP
 	src/AreaExtractor.cpp
 	src/AreaExtractorFilters.cpp 
@@ -52,5 +55,6 @@ set(LIB_SOURCES_CPP
 
 add_library(${PROJECT_NAME} STATIC
 	${LIB_SOURCES_CPP}
+	${INCLUDE_HEADERS}
 )
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${SSERIALIZE_COMPILE_DEFINITIONS})
