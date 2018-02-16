@@ -1,13 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(libosmtools)
-
-set(MY_CXX_FLAGS "-std=gnu++14 -Wall -Wextra -Wstrict-overflow=3")
-set(MY_C_FLAGS "-std=c99 -Wall -Wextra -Wstrict-overflow=3")
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MY_CXX_FLAGS}")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${MY_C_FLAGS}")
-
-find_package(CGAL)
+find_package(CGAL REQUIRED)
 
 set(LIBOSMTOOLS_INCLUDE_DIR
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
