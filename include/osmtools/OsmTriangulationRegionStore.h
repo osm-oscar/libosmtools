@@ -211,6 +211,8 @@ private:
 	sserialize::spatial::DistanceCalculator m_dc;
 };
 
+
+
 template<typename TDS>
 class CentroidDistanceBaseMeshCriteria {
 public:
@@ -285,6 +287,58 @@ private:
 	double m_r;
 public:
 	CentroidDistanceMeshCriteria(double maxDist) : m_r(maxDist) {}
+	Is_bad is_bad_object() const { return Is_bad(m_r, MyParentClass::dc()); }
+};
+
+template<typename TDS>
+class EdgeLengthRatioMeshCriteria: public CentroidDistanceBaseMeshCriteria<TDS> {
+public:
+	typedef CentroidDistanceBaseMeshCriteria<TDS> MyParentClass;
+	typedef typename MyParentClass::Face_handle Face_handle;
+	typedef typename MyParentClass::Point Point;
+public:
+	typedef double Quality;
+	struct Is_bad {
+		double m_r;
+		sserialize::spatial::DistanceCalculator m_dc;
+		Is_bad(double maxRatio, const sserialize::spatial::DistanceCalculator & dc) : m_r(maxRatio), m_dc(dc) {}
+		
+		CGAL::Mesh_2::Face_badness operator()(Quality q) const {
+			if (q > m_r) {
+				return CGAL::Mesh_2::IMPERATIVELY_BAD;
+			}
+			else {
+				return CGAL::Mesh_2::NOT_BAD;
+			}
+		}
+		
+		CGAL::Mesh_2::Face_badness operator()(Face_handle fh, Quality & q) const {
+			std::array<Point, 3> pts = {{
+				fh->vertex(0)->point(),
+				fh->vertex(1)->point(),
+				fh->vertex(2)->point()
+			}};
+			double longest = 0;
+			double shortest = std::numeric_limits<double>::max();
+			for(int i(0); i < 3; ++i) {
+				double p1x = CGAL::to_double(pts[i].x());
+				double p1y = CGAL::to_double(pts[i].y());
+				double p2x = CGAL::to_double(pts[TDS::cw(i)].x());
+				double p2y = CGAL::to_double(pts[TDS::cw(i)].y());
+				double dist = m_dc.calc(p1x, p1y, p2x, p2y);
+				longest = std::max(dist, longest);
+				shortest = std::min(dist, shortest);
+			}
+			shortest = std::max<double>(shortest, std::numeric_limits<double>::epsilon());
+			q = longest/shortest;
+			return (*this)(q);
+		};
+	};
+private:
+	double m_r;
+public:
+	///@param maxRatio the maxium ratio between the shortest and longest edge
+	EdgeLengthRatioMeshCriteria(double maxRatio) : m_r(maxRatio) {}
 	Is_bad is_bad_object() const { return Is_bad(m_r, MyParentClass::dc()); }
 };
 
