@@ -241,6 +241,28 @@ sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& 
 	return dest;
 }
 
+RefineBySize::RefineBySize(uint32_t cellSizeTh) :
+m_cellSizeTh(cellSizeTh)
+{}
+
+bool RefineBySize::init(const ::osmtools::OsmTriangulationRegionStore & store) {
+	return m_cellSizeTh < store.grid().tds().number_of_faces();
+}
+
+void RefineBySize::begin() {
+	std::cout << "Splitting cells larger than " << m_cellSizeTh << " triangles" << std::endl;
+}
+
+void RefineBySize::end() {}
+
+bool RefineBySize::refine(uint32_t cellId, const State & state) {
+	return state.cellSizes.at(cellId) > m_cellSizeTh;
+}
+
+RefineBySize::CellRefinerInterface * RefineBySize::copy() {
+	return new RefineBySize(m_cellSizeTh);
+}
+
 }}//end namespace detail::OsmTriangulationRegionStore
 
 OsmTriangulationRegionStore::FaceInfo::FaceInfo() :
@@ -562,11 +584,18 @@ void OsmTriangulationRegionStore::makeConnected() {
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 }
 
+void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount) {
+	using RefineBySize = detail::OsmTriangulationRegionStore::RefineBySize;
+	std::shared_ptr<CellRefinerInterface> refiner( new RefineBySize(cellSizeTh) );
+	refineCells(refiner, runs, splitPerRun, threadCount);
+}
 
-void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t /*threadCount*/) {
-	if (cellSizeTh > m_grid.tds().number_of_faces()) {
+void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellRefinerInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t /*threadCount*/) {
+	if (!refiner->init(*this)) {
 		return;
 	}
+	
+	CellRefinerInterface::State state;
 	
 	splitPerRun = std::max<uint32_t>(splitPerRun, 2);
 	
@@ -576,10 +605,8 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 	//check if there are any cells that are too large
 	sserialize::TimeMeasurer tm;
 	tm.begin();
-	std::cout << "Splitting cells larger than " << cellSizeTh << " triangles" << std::endl;
-	std::vector<uint32_t> cellSizes;
-	std::vector<Face_handle> cellRep;
-	cellInfo(cellRep, cellSizes);
+	refiner->begin();
+	cellInfo(state.cellRep, state.cellSizes);
 
 	//Stuff needed to handle the explicit dual-graph
 	CTGraph cg;
@@ -590,12 +617,12 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 	
 	for(uint32_t round(0); round < runs; ++round) {
 		std::cout << "Round " << round << std::endl;
-		uint32_t prevCellIdCount = (uint32_t) cellRep.size();
+		uint32_t prevCellIdCount = (uint32_t) state.cellRep.size();
 		//skipt cellId=0 since that is the infinite_face
 		sserialize::ProgressInfo pinfo;
-		pinfo.begin(cellRep.size(), "Splitting");
-		for(uint32_t cellId(1), cellIdInitialSize((uint32_t) cellRep.size()); cellId < cellIdInitialSize; ++cellId) {
-			if (cellSizes.at(cellId) < cellSizeTh) {
+		pinfo.begin(state.cellRep.size(), "Splitting");
+		for(uint32_t cellId(1), cellIdInitialSize(uint32_t(state.cellRep.size())); cellId < cellIdInitialSize; ++cellId) {
+			if (!refiner->refine(cellId, state) ) {
 				continue;
 			}
 			currentCells.clear();
@@ -603,19 +630,19 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 			stack.clear();
 			hopDists.clear();
 			
-			newFaceCellIds.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
-			hopDists.resize(cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
+			newFaceCellIds.resize(state.cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
+			hopDists.resize(state.cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
 			
-			SSERIALIZE_CHEAP_ASSERT(cellRep.at(cellId)->info().hasCellId() && cellRep.at(cellId)->info().cellId() == cellId);
+			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
 // 			uint32_t mpt = m_faceToCellId[cellRep.at(cellId)];
-			ctGraph(cellRep.at(cellId), cg);
-			SSERIALIZE_CHEAP_ASSERT(cg.size() == cellSizes.at(cellId));
+			ctGraph(state.cellRep.at(cellId), cg);
+			SSERIALIZE_CHEAP_ASSERT(cg.size() == state.cellSizes.at(cellId));
 			
 			uint32_t currentGenerator;
 			cg.calcMaxHopDistance(currentGenerator);
 			
 			uint32_t currentCellId = cellId;
-			cellRep.at(cellId) = cg.face(currentGenerator);
+			state.cellRep.at(cellId) = cg.face(currentGenerator);
 			currentCells.insert(currentCellId);
 			
 			bool cellsTooLarge = true;
@@ -644,19 +671,19 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 						newFaceCellIds.at(nid) = currentCellId;
 						stack.emplace_back(nid, 0);
 					}
-					SSERIALIZE_CHEAP_ASSERT(cellRep.at(cellId)->info().hasCellId() && cellRep.at(cellId)->info().cellId() == cellId);
+					SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
 				}
 				
 				for(uint32_t x : currentCells) {
-					cellSizes.at(x) = 0;
+					state.cellSizes.at(x) = 0;
 				}
 				for(uint32_t & x : newFaceCellIds) {
-					cellSizes.at(x) += 1;
+					state.cellSizes.at(x) += 1;
 				}
 				cellsTooLarge = false;
 				for(uint32_t x : currentCells) {
-					SSERIALIZE_CHEAP_ASSERT(cellSizes.at(x));
-					if (cellSizes.at(x) > cellSizeTh) {
+					SSERIALIZE_CHEAP_ASSERT(state.cellSizes.at(x));
+					if (refiner->refine(x, state)) {
 						cellsTooLarge = true;
 						break;
 					}
@@ -666,27 +693,27 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 					currentGenerator = (uint32_t) (maxElem - hopDists.begin());
 					currentCellId = (uint32_t) m_refinedCellIdToUnrefined.size();
 					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
-					cellSizes.push_back(0);
+					state.cellSizes.push_back(0);
 					currentCells.insert(currentCellId);
-					cellRep.push_back(cg.face(currentGenerator));
+					state.cellRep.push_back(cg.face(currentGenerator));
 				}
 			}//end for-loop voronoi-split run
-			SSERIALIZE_CHEAP_ASSERT(cellRep.at(cellId)->info().hasCellId() && cellRep.at(cellId)->info().cellId() == cellId);
+			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
 			SSERIALIZE_CHEAP_ASSERT(currentCells.size() <= splitPerRun);
 			//cellSizes are correctly set, assign faces the new ids
 			for(uint32_t nodeId(0), s(cg.size()); nodeId < s; ++nodeId) {
 				SSERIALIZE_CHEAP_ASSERT(newFaceCellIds.at(nodeId) != std::numeric_limits<uint32_t>::max());
 				cg.face(nodeId)->info().setCellId(newFaceCellIds.at(nodeId));
 			}
-			SSERIALIZE_CHEAP_ASSERT(cellRep.at(cellId)->info().hasCellId() && cellRep.at(cellId)->info().cellId() == cellId);
+			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
 			
 			pinfo(cellId);
 		}//end for-loop cell-loop
 		pinfo.end();
-		SSERIALIZE_CHEAP_ASSERT(cellRep.size() == cellSizes.size());
-		SSERIALIZE_CHEAP_ASSERT(cellRep.size() == m_refinedCellIdToUnrefined.size());
+		SSERIALIZE_CHEAP_ASSERT(state.cellRep.size() == state.cellSizes.size());
+		SSERIALIZE_CHEAP_ASSERT(state.cellRep.size() == m_refinedCellIdToUnrefined.size());
 		//if no new cell was created then all cells are smaller than cellSizeTh
-		if (prevCellIdCount == cellRep.size()) {
+		if (prevCellIdCount == state.cellRep.size()) {
 			break;
 		}
 	}//end for-loop split rounds
@@ -694,21 +721,17 @@ void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t run
 	std::cout << "Took " << tm << " to split the cells" << std::endl;
 	std::cout << "Found " << m_refinedCellIdToUnrefined.size() << " cells" << std::endl;
 #ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
-	if (runs == 0xFFFFFFFF) {
-		for(uint32_t x : cellSizes) {
-			SSERIALIZE_EXPENSIVE_ASSERT(x <= cellSizeTh);
-		}
-	}
 	{
-		SSERIALIZE_EXPENSIVE_ASSERT(cellSizes.size() == cellCount());
+		SSERIALIZE_EXPENSIVE_ASSERT(state.cellSizes.size() == cellCount());
 		std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
 		for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
 			uint32_t fid = cellId(it);
 			triangCountOfCells.at(fid) += 1;
 		}
 		for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
-			SSERIALIZE_EXPENSIVE_ASSERT(cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-			SSERIALIZE_EXPENSIVE_ASSERT((runs != 0xFFFFFFFF || triangCountOfCells.at(cellId) <= cellSizeTh) && (cellId == 0 || triangCountOfCells.at(cellId)));
+			SSERIALIZE_EXPENSIVE_ASSERT(state.cellSizes.at(cellId) == triangCountOfCells.at(cellId));
+			SSERIALIZE_EXPENSIVE_ASSERT(runs != 0xFFFFFFFF || !refiner->refine(cellId));
+			SSERIALIZE_EXPENSIVE_ASSERT(cellId == 0 || triangCountOfCells.at(cellId));
 		}
 	}
 #endif

@@ -482,6 +482,7 @@ public:
 	typedef detail::OsmTriangulationRegionStore::CTGraph<Tds> CTGraph;
 	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
 	
+	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
 	typedef detail::OsmTriangulationRegionStore::CentroidDistanceMeshCriteria<CDT> CentroidDistanceMeshCriteria;
 	typedef detail::OsmTriangulationRegionStore::LipschitzMeshCriteria<CDT> LipschitzMeshCriteria;
 	//If this type is selected, then MyRefineTag is mandatory
@@ -489,7 +490,26 @@ public:
 	
 	typedef enum { CGALRefineTag, MyRefineTag } RefinementAlgoTags;
 	
-	//Refines the triangulation if the distance between the centroid of the triangle and any of its defining points is larger than maxDist
+	class CellRefinerInterface {
+	public:
+		struct State {
+			///Triangles of cell i
+			std::vector<uint32_t> cellSizes;
+			///A face part of the cell i
+			std::vector<Face_handle> cellRep;
+		};
+	public:
+		virtual ~CellRefinerInterface() {}
+		///@return indicate if refinement is necessary at all
+		virtual bool init(const ::osmtools::OsmTriangulationRegionStore &) = 0;
+		//tells the refiner that refinement begins
+		virtual void begin() {}
+		//tells the refiner that refinement ends
+		virtual void end() {}
+		virtual bool refine(uint32_t /*cellId*/, const State &) = 0;
+		virtual CellRefinerInterface * copy() = 0;
+	};
+	
 public:
 	static uint32_t InfiniteFacesCellId;
 	static uint32_t UnsetFacesCellId;
@@ -531,6 +551,7 @@ public:
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
 	~OsmTriangulationRegionStore() {}
 	void clear();
+	const GridLocator & grid() const { return m_grid; }
 	const Triangulation & tds() const { return m_grid.tds(); }
 	Triangulation & tds() { return m_grid.tds(); }
 	inline uint32_t cellCount() const { return (uint32_t) m_refinedCellIdToUnrefined.size(); }
@@ -555,6 +576,8 @@ public:
 	///cells are not split into equally sized cells but rather by their voronoi diagram
 	///refine cells by connectedness so that all cells form a connected polygon (with holes)
 	void refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
+	
+	void refineCells(std::shared_ptr<CellRefinerInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
 	
 	void clearRefinement();
 	inline uint32_t unrefinedCellId(uint32_t cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
@@ -591,6 +614,25 @@ public:
 	
 	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
 };
+
+namespace detail {
+namespace OsmTriangulationRegionStore {
+	
+class RefineBySize: public ::osmtools::OsmTriangulationRegionStore::CellRefinerInterface {
+public:
+	RefineBySize(uint32_t cellSizeTh);
+	virtual ~RefineBySize() {}
+public:
+	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
+	virtual void begin() override;
+	virtual void end() override;
+	virtual bool refine(uint32_t cellId, const State & state) override;
+	virtual CellRefinerInterface * copy() override;
+private:
+	uint32_t m_cellSizeTh;
+};
+	
+}}//end namespace detail::OsmTriangulationRegionStore
 
 template<typename T_REFINER, typename T_Dummy>
 void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount) {
