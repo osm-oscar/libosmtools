@@ -155,6 +155,61 @@ public:
 	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) const;
 };
 
+struct Construct_refine_points {
+public:
+	typedef enum {T_CENTROID=1, T_LONGEST_EDGE=2, T_ON_EDGES=3} Type;
+public:
+	Construct_refine_points(Type t, const sserialize::spatial::DistanceCalculator & dc) : m_t(t), m_dc(dc) {}
+	template<typename T_TDS, typename T_OUTPUT_ITERATOR>
+	void calc(const typename T_TDS::Face_handle fh, T_OUTPUT_ITERATOR out) {
+		using ::osmtools::detail::OsmTriangulationRegionStore::centroid;
+		using TDS = T_TDS;
+		using Point = typename TDS::Point;
+		switch (m_t) {
+		case T_CENTROID:
+			*out = CGAL::centroid(fh->vertex(0)->point(), fh->vertex(1)->point(), fh->vertex(2)->point());
+			++out;
+			break;
+		case T_LONGEST_EDGE:
+		{
+			std::array<Point, 3> pts = {{
+				fh->vertex(0)->point(),
+				fh->vertex(1)->point(),
+				fh->vertex(2)->point()
+			}};
+			std::array<double, 3> el;
+			double longest = 0;
+			for(int i(0); i < 3; ++i) {
+				double p1x = CGAL::to_double(pts[i].x());
+				double p1y = CGAL::to_double(pts[i].y());
+				double p2x = CGAL::to_double(pts[TDS::cw(i)].x());
+				double p2y = CGAL::to_double(pts[TDS::cw(i)].y());
+				el[i] = m_dc.calc(p1x, p1y, p2x, p2y);
+				longest = std::max(el[i], longest);
+			}
+			for(int i(0); i < 3; ++i) {
+				if (el[i] == longest) {
+					*out = CGAL::midpoint(fh->vertex(i)->point(), fh->vertex(TDS::cw(i))->point());
+					++out;
+				}
+			}
+			break;
+		}
+		case T_ON_EDGES:
+			for(int i(0); i < 3; ++i) {
+				*out = CGAL::midpoint(fh->vertex(i)->point(), fh->vertex(TDS::cw(i))->point());
+				++out;
+			}
+			break;
+		default:
+			throw sserialize::InvalidEnumValueException("Construct_refine_points with type="  + std::to_string(m_t));
+			break;
+		};
+	}
+private:
+	int m_t;
+	sserialize::spatial::DistanceCalculator m_dc;
+};
 
 template<typename TDS>
 class CentroidDistanceBaseMeshCriteria {
@@ -181,12 +236,22 @@ public:
 			return q;
 		}
 	};
-protected:
-	sserialize::spatial::DistanceCalculator m_dc;
+	
+	using Construct_refine_points = ::osmtools::detail::OsmTriangulationRegionStore:: Construct_refine_points;
+	
+public:
+	CentroidDistanceBaseMeshCriteria(Construct_refine_points::Type crpt = Construct_refine_points::T_CENTROID) : m_dc(sserialize::spatial::DistanceCalculator::DCT_GEODESIC_ACCURATE),
+	m_crpt(crpt)
+	{}
+public:
+	Construct_refine_points construct_refine_points_object() {
+		return Construct_refine_points(m_crpt, dc());
+	}
 protected:
 	const sserialize::spatial::DistanceCalculator & dc() const { return m_dc; }
-public:
-	CentroidDistanceBaseMeshCriteria() : m_dc(sserialize::spatial::DistanceCalculator::DCT_GEODESIC_ACCURATE) {}
+protected:
+	sserialize::spatial::DistanceCalculator m_dc;
+	Construct_refine_points::Type m_crpt;
 };
 
 template<typename TDS>
@@ -225,7 +290,7 @@ public:
 
 
 template<typename TDS>
-class LipschitzMeshCriteria: CentroidDistanceBaseMeshCriteria<TDS> {
+class LipschitzMeshCriteria: public CentroidDistanceBaseMeshCriteria<TDS> {
 public:
 	typedef CentroidDistanceBaseMeshCriteria<TDS> MyParentClass;
 	typedef typename MyParentClass::Face_handle Face_handle;
@@ -352,6 +417,7 @@ public:
 	
 	typedef Triangulation::Point Point;
 	typedef osmtools::GridLocator<Triangulation, KernelHasThreadSafeNumberType> GridLocator;
+	typedef GridLocator::Vertex_handle Vertex_handle;
 	typedef GridLocator::Face_handle Face_handle;
 	typedef sserialize::MMVector<uint32_t> RegionListContainer;
 	typedef sserialize::CFLArray<RegionListContainer> RegionList;
@@ -474,13 +540,31 @@ public:
 
 template<typename T_REFINER, typename T_Dummy>
 void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount) {
+	struct RefinePoint {
+		Vertex_handle vh;
+		Point p;
+		RefinePoint(const Vertex_handle & vh, const Point & p) : vh(vh), p(p) {}
+	};
+	struct MyBackInserter {
+		MyBackInserter(std::vector<RefinePoint> * dest) : dest(dest) {}
+		MyBackInserter & operator=(const Point & p) {
+			dest->emplace_back(vh, p);
+			return *this;
+		}
+		MyBackInserter & operator*() { return *this; }
+		MyBackInserter & operator++() { return *this; }
+		std::vector<RefinePoint> * dest;
+		Vertex_handle vh;
+	};
 	uint32_t refineCount = 0;
-	std::vector<Point> refinePoints;
+	std::vector<RefinePoint> refinePoints;
 	sserialize::MinMax<typename T_REFINER::Quality> qs;
 	bool trWasRefined = true;
 	typename T_REFINER::Is_bad bo(refiner.is_bad_object());
+	typename T_REFINER::Construct_refine_points crp(refiner.construct_refine_points_object());
 	typename T_REFINER::Quality q = 0;
 	typename T_REFINER::Face_handle rfh;
+	MyBackInserter refinePointsInserter(&refinePoints);
 	for(uint32_t round(0); round < 10000 && trWasRefined; ++round) {
 		std::cout << "Trianglerefinement round " << round << std::flush;
 		trWasRefined = false;
@@ -489,16 +573,17 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 		for(Finite_faces_iterator fit(finite_faces_begin()), fend(finite_faces_end()); fit != fend; ++fit) {
 			rfh = fit;
 			if (CGAL::Mesh_2::NOT_BAD != bo.operator()(rfh, q)) {
-				refinePoints.push_back(centroid(fit));
+				crp.template calc<Triangulation, MyBackInserter>(rfh, refinePointsInserter);
 			}
 			qs.update(q);
 		}
 		std::cout << " adds up to " << refinePoints.size() << " points. " << std::flush;
-		uint32_t tmp = (uint32_t) m_grid.tds().insert(refinePoints.begin(), refinePoints.end());
-		//TODO:why is tmp smaller than refinePoints.size()? This should not be the case
-		refineCount += tmp;
+		for(const RefinePoint & rp : refinePoints) {
+			m_grid.tds().insert(rp.p, rp.vh->face());
+			++refineCount;
+		}
 		trWasRefined = refinePoints.size();
-		std::cout << "Added " << tmp << " extra points. Quality: min=" << qs.min() << ", max=" << qs.max() << std::endl;
+		std::cout << "Added " << refinePoints.size() << " extra points. Quality: min=" << qs.min() << ", max=" << qs.max() << std::endl;
 		assignCellIds(grt, threadCount);
 	}
 	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
@@ -769,6 +854,7 @@ OsmTriangulationRegionStore::init(
 			myRefineMesh(*meshCriteria, grt, threadCount);
 			break;
 		default:
+			throw sserialize::UnsupportedFeatureException("Unsupported refinement algorihm: " + std::to_string(refineAlgo));
 			break;
 		}
 	}
