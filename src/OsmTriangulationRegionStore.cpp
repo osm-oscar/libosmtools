@@ -131,7 +131,7 @@ bool CTGraphBase::calcMaxHopDistance(uint32_t& maxHopDistRoot) {
 	}
 	else {
 		//This is an O(n^2) algorithm, hence if n > 10000 we can only approximate the real maximum hop distance
-		sserialize::ThreadPool::execute(w, (wctx.nodes->size() > 1000 ? 0 : 1));
+		sserialize::ThreadPool::execute(w, (wctx.nodes->size() > 1000 ? 0 : 1), sserialize::ThreadPool::CopyTaskTag());
 	}
 	maxHopDistRoot = wctx.maxHopDistRoot;
 	return hopDistIsExact;
