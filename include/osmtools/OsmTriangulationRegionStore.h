@@ -497,6 +497,14 @@ public:
 			std::vector<uint32_t> cellSizes;
 			///A face part of the cell i
 			std::vector<Face_handle> cellRep;
+			///the cell triangle graph of the current source cell that is about to be split
+			CTGraph cg;
+			///the list of new cell Ids, maps from CTGraph::NodeId to CellId
+			std::vector<uint32_t> newFaceCellIds;
+			//the list of new cell representatives, maps to CTGraph::NodeId
+			std::vector<uint32_t> newCellReps;
+			///the list of new cell ids
+			std::unordered_set<uint32_t> currentCells;
 		};
 	public:
 		virtual ~CellRefinerInterface() {}
@@ -618,10 +626,10 @@ public:
 namespace detail {
 namespace OsmTriangulationRegionStore {
 	
-class RefineBySize: public ::osmtools::OsmTriangulationRegionStore::CellRefinerInterface {
+class RefineByTriangleCount: public ::osmtools::OsmTriangulationRegionStore::CellRefinerInterface {
 public:
-	RefineBySize(uint32_t cellSizeTh);
-	virtual ~RefineBySize() {}
+	RefineByTriangleCount(uint32_t cellSizeTh);
+	virtual ~RefineByTriangleCount() {}
 public:
 	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
 	virtual void begin() override;
@@ -631,7 +639,22 @@ public:
 private:
 	uint32_t m_cellSizeTh;
 };
-	
+
+class RefineBySize: public ::osmtools::OsmTriangulationRegionStore::CellRefinerInterface {
+public:
+	RefineBySize(double maxCellDiameter);
+	virtual ~RefineBySize() {}
+public:
+	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
+	virtual void begin() override;
+	virtual void end() override;
+	virtual bool refine(uint32_t cellId, const State & state) override;
+	virtual CellRefinerInterface * copy() override;
+private:
+	double m_maxCellDiameter;
+	sserialize::spatial::DistanceCalculator m_dc;
+};
+
 }}//end namespace detail::OsmTriangulationRegionStore
 
 template<typename T_REFINER, typename T_Dummy>
