@@ -277,8 +277,32 @@ void RefineBySize::begin() {
 }
 void RefineBySize::end() {}
 
-bool RefineBySize::refine(uint32_t cellId, const State & state) {
+bool RefineBySize::refine(const State & state) {
+	using ::osmtools::detail::OsmTriangulationRegionStore::centroid;
+	std::map<uint32_t, sserialize::spatial::GeoRect> bounds;
+	for(uint32_t i(0), s(state.cg.size()); i < s; ++i) {
+		uint32_t cellId = state.newFaceCellIds[i];
+		sserialize::spatial::GeoRect & bound = bounds[cellId];
+		auto fh = state.cg.face(i);
+		for(int i(0); i < 3; ++i) {
+			const auto & p = fh->vertex(i)->point();
+			double lat = CGAL::to_double(p.x());
+			double lon = CGAL::to_double(p.y());
+			bound.enlarge(lat, lon);
+		}
+	}
 	
+	for(const auto & bound : bounds) {
+		if (bound.second.diagInM() > m_maxCellDiameter) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool RefineBySize::refine(uint32_t, const State &) {
+	throw sserialize::UnimplementedFunctionException("RefineBySize");
+	return false;
 }
 
 RefineBySize::CellRefinerInterface * RefineBySize::copy() {
@@ -286,6 +310,17 @@ RefineBySize::CellRefinerInterface * RefineBySize::copy() {
 }
 
 }}//end namespace detail::OsmTriangulationRegionStore
+
+
+bool OsmTriangulationRegionStore::CellRefinerInterface::refine(const State & state) {
+	for(uint32_t x : state.currentCells) {
+		SSERIALIZE_CHEAP_ASSERT(state.cellSizes.at(x));
+		if (this->refine(x, state)) {
+			return true;
+		}
+	}
+	return false;
+}
 
 OsmTriangulationRegionStore::FaceInfo::FaceInfo() :
 m_cellId(OsmTriangulationRegionStore::UnsetFacesCellId)
@@ -607,7 +642,7 @@ void OsmTriangulationRegionStore::makeConnected() {
 }
 
 void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount) {
-	using RefineBySize = detail::OsmTriangulationRegionStore::RefineByTriangleCount;
+	using RefineByTriangleCount = detail::OsmTriangulationRegionStore::RefineByTriangleCount;
 	std::shared_ptr<CellRefinerInterface> refiner( new RefineByTriangleCount(cellSizeTh) );
 	refineCells(refiner, runs, splitPerRun, threadCount);
 }
@@ -701,14 +736,7 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellRefinerInterfa
 				for(uint32_t & x : state.newFaceCellIds) {
 					state.cellSizes.at(x) += 1;
 				}
-				cellsTooLarge = false;
-				for(uint32_t x : state.currentCells) {
-					SSERIALIZE_CHEAP_ASSERT(state.cellSizes.at(x));
-					if (refiner->refine(x, state)) {
-						cellsTooLarge = true;
-						break;
-					}
-				}
+				cellsTooLarge = refiner->refine(state);
 				if (cellsTooLarge && voronoiSplitRun+1 < splitPerRun) {//find a new generator
 					std::vector<uint32_t>::const_iterator maxElem = std::max_element(hopDists.begin(), hopDists.end());
 					currentGenerator = (uint32_t) (maxElem - hopDists.begin());

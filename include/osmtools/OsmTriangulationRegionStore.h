@@ -86,7 +86,7 @@ private:
 public:
 	CTGraph() {}
 	virtual ~CTGraph() {}
-	Face_handle face(uint32_t faceNodeId) { return m_faces.at(faceNodeId); }
+	Face_handle face(uint32_t faceNodeId) const { return m_faces.at(faceNodeId); }
 	uint32_t node(const Face_handle & fh) {
 		if (m_faceToNodeId.is_defined(fh)) {
 			return m_faceToNodeId[fh];
@@ -493,9 +493,9 @@ public:
 	class CellRefinerInterface {
 	public:
 		struct State {
-			///Triangles of cell i
+			///Triangle count of all cells (includes new cells)
 			std::vector<uint32_t> cellSizes;
-			///A face part of the cell i
+			///A face representative all cells (includes new cells)
 			std::vector<Face_handle> cellRep;
 			///the cell triangle graph of the current source cell that is about to be split
 			CTGraph cg;
@@ -503,18 +503,21 @@ public:
 			std::vector<uint32_t> newFaceCellIds;
 			//the list of new cell representatives, maps to CTGraph::NodeId
 			std::vector<uint32_t> newCellReps;
-			///the list of new cell ids
+			///the set of new cell ids
 			std::unordered_set<uint32_t> currentCells;
 		};
 	public:
 		virtual ~CellRefinerInterface() {}
 		///@return indicate if refinement is necessary at all
-		virtual bool init(const ::osmtools::OsmTriangulationRegionStore &) = 0;
+		virtual bool init(const ::osmtools::OsmTriangulationRegionStore &) { return false; }
 		//tells the refiner that refinement begins
 		virtual void begin() {}
 		//tells the refiner that refinement ends
 		virtual void end() {}
-		virtual bool refine(uint32_t /*cellId*/, const State &) = 0;
+		///@return true if source cell needs further refinement
+		virtual bool refine(const State &);
+		///@return true if cell needs further refinement
+		virtual bool refine(uint32_t /*cellId*/, const State &) { return false; }
 		virtual CellRefinerInterface * copy() = 0;
 	};
 	
@@ -648,6 +651,7 @@ public:
 	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
 	virtual void begin() override;
 	virtual void end() override;
+	virtual bool refine(const State & state) override;
 	virtual bool refine(uint32_t cellId, const State & state) override;
 	virtual CellRefinerInterface * copy() override;
 private:
