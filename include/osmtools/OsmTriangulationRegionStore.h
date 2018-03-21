@@ -19,8 +19,10 @@
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Constrained_triangulation_plus_2.h>
 #include <CGAL/Triangulation_face_base_with_info_2.h>
+#include <CGAL/Delaunay_mesh_vertex_base_2.h>
 #include <CGAL/Delaunay_mesh_face_base_2.h>
 #include <CGAL/Delaunay_mesher_2.h>
+#include <CGAL/Triangulation_conformer_2.h>
 
 #include <CGAL/Delaunay_mesh_size_criteria_2.h>
 
@@ -249,6 +251,7 @@ public:
 	Construct_refine_points construct_refine_points_object() {
 		return Construct_refine_points(m_crpt, dc());
 	}
+	static bool usesCellIds() { return false; }
 protected:
 	const sserialize::spatial::DistanceCalculator & dc() const { return m_dc; }
 protected:
@@ -426,6 +429,7 @@ public:
 public:
 	RefineTrianglesWithCellIdMeshCriteria(const MyParentClass & base) : MyParentClass(base) {}
 	Is_bad is_bad_object() const { return Is_bad(MyParentClass::is_bad_object()); }
+	static bool usesCellIds() { return true; }
 };
 
 }}//end namespace detail::OsmTriangulationRegionStore
@@ -451,16 +455,18 @@ public:
 		bool hasCellId() const;
 	};
 
-	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
+	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+// 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 // 	typedef CGAL::Filtered_simple_cartesian_extended_integer_kernel K;
 	static constexpr bool KernelHasThreadSafeNumberType = std::is_same<K, CGAL::Filtered_simple_cartesian_extended_integer_kernel>::value;
 // 	typedef CGAL::Simple_cartesian_extended_integer_kernel K;
 	typedef CGAL::Exact_intersections_tag Itag;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
+	typedef CGAL::Delaunay_mesh_vertex_base_2<K, Vb> MVb;
 	typedef CGAL::Triangulation_face_base_with_info_2<FaceInfo, K> FbWithInfo;
 	typedef CGAL::Constrained_triangulation_face_base_2<K, FbWithInfo> CFb;
-	typedef CGAL::Delaunay_mesh_face_base_2<K, CFb> Fb;
-	typedef CGAL::Triangulation_data_structure_2<Vb, Fb> Tds;
+	typedef CGAL::Delaunay_mesh_face_base_2<K, CFb> MFb;
+	typedef CGAL::Triangulation_data_structure_2<MVb, MFb> Tds;
 	typedef CGAL::Constrained_Delaunay_triangulation_2<K, Tds, Itag> CDTBase;
 	typedef CGAL::Constrained_triangulation_plus_2<CDTBase> CDTP;
 
@@ -488,7 +494,14 @@ public:
 	//If this type is selected, then MyRefineTag is mandatory
 	typedef detail::OsmTriangulationRegionStore::RefineTrianglesWithCellIdMeshCriteria<LipschitzMeshCriteria> RegionOnlyLipschitzMeshCriteria;
 	
-	typedef enum { CGALRefineTag, MyRefineTag } RefinementAlgoTags;
+	typedef enum {
+		__CGALPredefinedRefineTag=0x10000,
+		MyRefineTag=0x1,
+		CGALRefineTag=0x2,
+		CGALConformingTriangulationTag=0x4|__CGALPredefinedRefineTag,
+		CGALGabrielTriangulationTag=0x8|__CGALPredefinedRefineTag,
+		
+	} RefinementAlgoTags;
 	
 	class CellRefinerInterface {
 	public:
@@ -568,7 +581,8 @@ public:
 	inline uint32_t cellCount() const { return (uint32_t) m_refinedCellIdToUnrefined.size(); }
 	inline uint32_t unrefinedCellCount() const { return (uint32_t) m_cellIdToCellList.size(); }
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
-	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2
+	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2 and provide function bool usesCellIds() if refineAlgo == MyRefineTag
+	///@param refineAlgo selects the refinement algo, if CGALConformingTriangulationTag or CGALGabrielTriangulationTag, then meshCriteria is ignored
 	template<typename TDummy,
 		typename T_TRIANG_REFINER = OsmTriangulationRegionStore::RegionOnlyLipschitzMeshCriteria,
 		typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
@@ -582,13 +596,13 @@ public:
 	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
 	///Splits cells into connected cells
 	void makeConnected();
-	///First calls makeConnected(). Then splits cells into smaller cells if they are larger than cellSizeTh
-	///This is done in multiple runs where each cell is split into up to numVoronoiSplitRuns smaller cells until each cell is smaller than cellSizeTh
-	///cells are not split into equally sized cells but rather by their voronoi diagram
+	///First calls makeConnected(). Then splits cells into smaller cells as long as refiner returns true
+	///This is done in multiple runs where each cell is split into up to numVoronoiSplitRuns smaller cells.
+	///Cells are not split into equally sized cells but rather by their voronoi diagram
 	///refine cells by connectedness so that all cells form a connected polygon (with holes)
-	void refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
-	
 	void refineCells(std::shared_ptr<CellRefinerInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
+	
+	void refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
 	
 	void clearRefinement();
 	inline uint32_t unrefinedCellId(uint32_t cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
@@ -679,6 +693,11 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 		std::vector<RefinePoint> * dest;
 		Vertex_handle vh;
 	};
+	
+	if (T_REFINER::usesCellIds()) {
+		assignCellIds(grt, threadCount);
+	}
+	
 	uint32_t refineCount = 0;
 	std::vector<RefinePoint> refinePoints;
 	sserialize::MinMax<typename T_REFINER::Quality> qs;
@@ -707,7 +726,6 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 		}
 		trWasRefined = refinePoints.size();
 		std::cout << "Added " << refinePoints.size() << " extra points. Quality: min=" << qs.min() << ", max=" << qs.max() << std::endl;
-		assignCellIds(grt, threadCount);
 	}
 	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
 }
@@ -964,23 +982,36 @@ OsmTriangulationRegionStore::init(
 		std::cout << "took " << tm << std::endl;
 	}
 	
-	//we now have to assign every face its cellid
-	//a face lives in multiple regions, so every face has a unique list of region ids
-	//faces that are connected and have the same region-list get the same cellid
-	
-	assignCellIds(grt, threadCount);
 	
 	//refine the triangulation
-	if (meshCriteria) {
+	if (refineAlgo == MyRefineTag && meshCriteria) {
+		myRefineMesh(*meshCriteria, grt, threadCount);
+	}
+	else if (refineAlgo == CGALRefineTag) {
+		CGAL::Delaunay_mesher_2<Triangulation, T_TRIANG_REFINER> mesher(m_grid.tds(), *meshCriteria);
+		mesher.refine_mesh();
+	}
+	else if (refineAlgo & __CGALPredefinedRefineTag) {
+		CGAL::Triangulation_conformer_2<Triangulation> conform(m_grid.tds());
 		switch (refineAlgo) {
-		case MyRefineTag:
-			myRefineMesh(*meshCriteria, grt, threadCount);
+		case CGALConformingTriangulationTag:
+			conform.make_conforming_Delaunay();
+			break;
+		case CGALGabrielTriangulationTag:
+			conform.make_conforming_Delaunay();
+			conform.make_conforming_Gabriel();
 			break;
 		default:
-			throw sserialize::UnsupportedFeatureException("Unsupported refinement algorihm: " + std::to_string(refineAlgo));
+			throw sserialize::UnsupportedFeatureException("Unsupported refinement algorithm: " + std::to_string(refineAlgo));
 			break;
 		}
 	}
+
+	//we now have to assign every face its cellid
+	//a face lives in multiple regions, so every face has a unique list of region ids
+	//faces that are connected and have the same region-list get the same cellid
+	assignCellIds(grt, threadCount);
+
 	
 	if (geoCleanType != sserialize::Static::spatial::Triangulation::GCT_NONE) {
 		sserialize::Static::spatial::Triangulation::prepare(tds(), re,  geoCleanType, 0.01);
@@ -992,7 +1023,7 @@ OsmTriangulationRegionStore::init(
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
-	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
+	SSERIALIZE_VERY_EXPENSIVE_ASSERT(selfTest());
 }
 
 
