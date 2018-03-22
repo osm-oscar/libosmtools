@@ -241,72 +241,7 @@ sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& 
 	return dest;
 }
 
-RefineByTriangleCount::RefineByTriangleCount(uint32_t cellSizeTh) :
-m_cellSizeTh(cellSizeTh)
-{}
 
-bool RefineByTriangleCount::init(const ::osmtools::OsmTriangulationRegionStore & store) {
-	return m_cellSizeTh < store.grid().tds().number_of_faces();
-}
-
-void RefineByTriangleCount::begin() {
-	std::cout << "Splitting cells larger than " << m_cellSizeTh << " triangles" << std::endl;
-}
-
-void RefineByTriangleCount::end() {}
-
-bool RefineByTriangleCount::refine(uint32_t cellId, const State & state) {
-	return state.cellSizes.at(cellId) > m_cellSizeTh;
-}
-
-RefineByTriangleCount::CellCriteriaInterface * RefineByTriangleCount::copy() {
-	return new RefineByTriangleCount(m_cellSizeTh);
-}
-
-RefineBySize::RefineBySize(double maxCellDiameter) :
-m_maxCellDiameter(maxCellDiameter),
-m_dc(sserialize::spatial::DistanceCalculator::DCT_GEODESIC_ACCURATE)
-{}
-
-bool RefineBySize::init(const ::osmtools::OsmTriangulationRegionStore & store) {
-	return store.grid().grid().rect().diagInM() > m_maxCellDiameter;
-}
-
-void RefineBySize::begin() {
-	std::cout << "Splitting cells larger than " << m_maxCellDiameter << "m in diameter" << std::endl;
-}
-void RefineBySize::end() {}
-
-bool RefineBySize::refine(const State & state) {
-	std::map<uint32_t, sserialize::spatial::GeoRect> bounds;
-	for(uint32_t i(0), s(state.cg.size()); i < s; ++i) {
-		uint32_t cellId = state.newFaceCellIds[i];
-		sserialize::spatial::GeoRect & bound = bounds[cellId];
-		auto fh = state.cg.face(i);
-		for(int i(0); i < 3; ++i) {
-			const auto & p = fh->vertex(i)->point();
-			double lat = CGAL::to_double(p.x());
-			double lon = CGAL::to_double(p.y());
-			bound.enlarge(lat, lon);
-		}
-	}
-	
-	for(const auto & bound : bounds) {
-		if (bound.second.diagInM() > m_maxCellDiameter) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool RefineBySize::refine(uint32_t, const State &) {
-	throw sserialize::UnimplementedFunctionException("RefineBySize");
-	return false;
-}
-
-RefineBySize::CellCriteriaInterface * RefineBySize::copy() {
-	return new RefineBySize(m_maxCellDiameter);
-}
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
@@ -651,12 +586,6 @@ void OsmTriangulationRegionStore::makeConnected() {
 	
 	m_isConnected = true;
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
-}
-
-void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount) {
-	using RefineByTriangleCount = detail::OsmTriangulationRegionStore::RefineByTriangleCount;
-	std::shared_ptr<CellCriteriaInterface> refiner( new RefineByTriangleCount(cellSizeTh) );
-	refineCells(refiner, runs, splitPerRun, threadCount);
 }
 
 void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t /*threadCount*/) {

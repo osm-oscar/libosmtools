@@ -45,6 +45,7 @@ set(LIB_SOURCES_CPP
 	src/types.cpp
 	src/OsmTriangulationRegionStore.cpp
 	src/OsmGridRegionTree.cpp
+	src/CellCriteria.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC

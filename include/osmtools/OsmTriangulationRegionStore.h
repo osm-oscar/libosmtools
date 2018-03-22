@@ -220,7 +220,7 @@ public:
 		struct State {
 			///Triangle count of all cells (includes new cells)
 			std::vector<uint32_t> cellSizes;
-			///A face representative all cells (includes new cells)
+			///Face representatives for all cells (includes new cells)
 			std::vector<Face_handle> cellRep;
 			///the cell triangle graph of the current source cell that is about to be split
 			CTGraph cg;
@@ -335,8 +335,6 @@ public:
 	///refine cells by connectedness so that all cells form a connected polygon (with holes)
 	void refineCells(std::shared_ptr<CellCriteriaInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
 	
-	void refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
-	
 	inline uint32_t unrefinedCellId(uint32_t cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
 	uint32_t cellId(double lat, double lon);
 	inline uint32_t cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
@@ -371,43 +369,6 @@ public:
 	
 	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
 };
-
-namespace detail {
-namespace OsmTriangulationRegionStore {
-	
-class RefineByTriangleCount: public ::osmtools::OsmTriangulationRegionStore::CellCriteriaInterface {
-public:
-	RefineByTriangleCount(uint32_t cellSizeTh);
-	virtual ~RefineByTriangleCount() {}
-public:
-	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
-	virtual void begin() override;
-	virtual void end() override;
-	virtual bool refine(uint32_t cellId, const State & state) override;
-	virtual CellCriteriaInterface * copy() override;
-private:
-	uint32_t m_cellSizeTh;
-};
-
-class RefineBySize: public ::osmtools::OsmTriangulationRegionStore::CellCriteriaInterface {
-public:
-	RefineBySize(double maxCellDiameter);
-	virtual ~RefineBySize() {}
-public:
-	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
-	virtual void begin() override;
-	virtual void end() override;
-	virtual bool refine(const State & state) override;
-	virtual bool refine(uint32_t cellId, const State & state) override;
-	virtual CellCriteriaInterface * copy() override;
-private:
-	double m_maxCellDiameter;
-	sserialize::spatial::DistanceCalculator m_dc;
-};
-
-}}//end namespace detail::OsmTriangulationRegionStore
-
-
 
 template<typename T_TRIANG_REFINER>
 void OsmTriangulationRegionStore::refineTriangulation(const T_TRIANG_REFINER & meshCriteria, TriangulationRefinementAlgorithmSelector refineAlgo, uint32_t threadCount) {
