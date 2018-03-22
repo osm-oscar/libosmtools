@@ -215,7 +215,7 @@ public:
 		TRAS_GabrielTriangulation=0x8
 	} TriangulationRefinementAlgorithmSelector;
 	
-	class CellRefinerInterface {
+	class CellCriteriaInterface {
 	public:
 		struct State {
 			///Triangle count of all cells (includes new cells)
@@ -232,7 +232,7 @@ public:
 			std::unordered_set<uint32_t> currentCells;
 		};
 	public:
-		virtual ~CellRefinerInterface() {}
+		virtual ~CellCriteriaInterface() {}
 		///@return indicate if refinement is necessary at all
 		virtual bool init(const ::osmtools::OsmTriangulationRegionStore &) { return false; }
 		//tells the refiner that refinement begins
@@ -243,7 +243,7 @@ public:
 		virtual bool refine(const State &);
 		///@return true if cell needs further refinement
 		virtual bool refine(uint32_t /*cellId*/, const State &) { return false; }
-		virtual CellRefinerInterface * copy() = 0;
+		virtual CellCriteriaInterface * copy() = 0;
 	};
 	
 public:
@@ -333,7 +333,7 @@ public:
 	///This is done in multiple runs where each cell is split into up to numVoronoiSplitRuns smaller cells.
 	///Cells are not split into equally sized cells but rather by their voronoi diagram
 	///refine cells by connectedness so that all cells form a connected polygon (with holes)
-	void refineCells(std::shared_ptr<CellRefinerInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
+	void refineCells(std::shared_ptr<CellCriteriaInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
 	
 	void refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
 	
@@ -375,7 +375,7 @@ public:
 namespace detail {
 namespace OsmTriangulationRegionStore {
 	
-class RefineByTriangleCount: public ::osmtools::OsmTriangulationRegionStore::CellRefinerInterface {
+class RefineByTriangleCount: public ::osmtools::OsmTriangulationRegionStore::CellCriteriaInterface {
 public:
 	RefineByTriangleCount(uint32_t cellSizeTh);
 	virtual ~RefineByTriangleCount() {}
@@ -384,12 +384,12 @@ public:
 	virtual void begin() override;
 	virtual void end() override;
 	virtual bool refine(uint32_t cellId, const State & state) override;
-	virtual CellRefinerInterface * copy() override;
+	virtual CellCriteriaInterface * copy() override;
 private:
 	uint32_t m_cellSizeTh;
 };
 
-class RefineBySize: public ::osmtools::OsmTriangulationRegionStore::CellRefinerInterface {
+class RefineBySize: public ::osmtools::OsmTriangulationRegionStore::CellCriteriaInterface {
 public:
 	RefineBySize(double maxCellDiameter);
 	virtual ~RefineBySize() {}
@@ -399,7 +399,7 @@ public:
 	virtual void end() override;
 	virtual bool refine(const State & state) override;
 	virtual bool refine(uint32_t cellId, const State & state) override;
-	virtual CellRefinerInterface * copy() override;
+	virtual CellCriteriaInterface * copy() override;
 private:
 	double m_maxCellDiameter;
 	sserialize::spatial::DistanceCalculator m_dc;

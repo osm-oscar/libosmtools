@@ -259,7 +259,7 @@ bool RefineByTriangleCount::refine(uint32_t cellId, const State & state) {
 	return state.cellSizes.at(cellId) > m_cellSizeTh;
 }
 
-RefineByTriangleCount::CellRefinerInterface * RefineByTriangleCount::copy() {
+RefineByTriangleCount::CellCriteriaInterface * RefineByTriangleCount::copy() {
 	return new RefineByTriangleCount(m_cellSizeTh);
 }
 
@@ -304,14 +304,14 @@ bool RefineBySize::refine(uint32_t, const State &) {
 	return false;
 }
 
-RefineBySize::CellRefinerInterface * RefineBySize::copy() {
+RefineBySize::CellCriteriaInterface * RefineBySize::copy() {
 	return new RefineBySize(m_maxCellDiameter);
 }
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
 
-bool OsmTriangulationRegionStore::CellRefinerInterface::refine(const State & state) {
+bool OsmTriangulationRegionStore::CellCriteriaInterface::refine(const State & state) {
 	for(uint32_t x : state.currentCells) {
 		SSERIALIZE_CHEAP_ASSERT(state.cellSizes.at(x));
 		if (this->refine(x, state)) {
@@ -655,11 +655,11 @@ void OsmTriangulationRegionStore::makeConnected() {
 
 void OsmTriangulationRegionStore::refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount) {
 	using RefineByTriangleCount = detail::OsmTriangulationRegionStore::RefineByTriangleCount;
-	std::shared_ptr<CellRefinerInterface> refiner( new RefineByTriangleCount(cellSizeTh) );
+	std::shared_ptr<CellCriteriaInterface> refiner( new RefineByTriangleCount(cellSizeTh) );
 	refineCells(refiner, runs, splitPerRun, threadCount);
 }
 
-void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellRefinerInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t /*threadCount*/) {
+void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t /*threadCount*/) {
 	makeConnected();
 	//all cells are connected now
 
@@ -667,7 +667,7 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellRefinerInterfa
 		return;
 	}
 	
-	CellRefinerInterface::State state;
+	CellCriteriaInterface::State state;
 	
 	splitPerRun = std::max<uint32_t>(splitPerRun, 2);
 	
