@@ -248,9 +248,15 @@ public:
 	m_crpt(crpt)
 	{}
 public:
+	void crpt(Construct_refine_points::Type type) {
+		m_crpt = type;
+	}
+	Construct_refine_points::Type crpt() const { return m_crpt; }
+public:
 	Construct_refine_points construct_refine_points_object() {
 		return Construct_refine_points(m_crpt, dc());
 	}
+public:
 	static bool usesCellIds() { return false; }
 protected:
 	const sserialize::spatial::DistanceCalculator & dc() const { return m_dc; }
@@ -271,6 +277,15 @@ public:
 		double m_r;
 		sserialize::spatial::DistanceCalculator m_dc;
 		Is_bad(double maxDist, const sserialize::spatial::DistanceCalculator & dc) : MyParentClass::Is_bad(dc), m_r(maxDist), m_dc(dc) {}
+		
+		inline Quality quality(CGAL::Mesh_2::Face_badness fb) const {
+			if (fb == CGAL::Mesh_2::NOT_BAD) {
+				return m_r;
+			}
+			else {
+				return std::numeric_limits<double>::max();
+			}
+		}
 		
 		CGAL::Mesh_2::Face_badness operator()(Quality q) const {
 			if (q > m_r) {
@@ -312,6 +327,15 @@ public:
 			}
 			else {
 				return CGAL::Mesh_2::NOT_BAD;
+			}
+		}
+		
+		Quality quality(CGAL::Mesh_2::Face_badness fb) const {
+			if (fb == CGAL::Mesh_2::NOT_BAD) {
+				return m_r;
+			}
+			else {
+				return std::numeric_limits<double>::max();
 			}
 		}
 		
@@ -496,6 +520,7 @@ public:
 	
 	typedef enum {
 		__CGALPredefinedRefineTag=0x10000,
+		NoRefineTag=0x0,
 		MyRefineTag=0x1,
 		CGALRefineTag=0x2,
 		CGALConformingTriangulationTag=0x4|__CGALPredefinedRefineTag,
@@ -552,6 +577,16 @@ private:
 	};
 // 	typedef std::unordered_map<Face_handle, uint32_t, FaceHandleHash> FaceCellIdMap;
 	typedef CGAL::Unique_hash_map<Face_handle, uint32_t> FaceCellIdMap;
+	
+	typedef enum {
+		CS_EMPTY=0x0,
+		CS_HAVE_TRIANGULATION=0x1, //triangulation is there, but no cells are assigned
+		CS_HAVE_CELLS=0x2, //faces have cell ids assigned
+		CS_CLEAN_GEOMETRY=0x4 //triangulation has clean geometry
+		CS_HAVE_GRID=0x8, //grid for fast look-up is available
+		CS_HAVE_REFINED_CELLS=0x10 // cells are refined
+	} ConstructionState;
+	
 private:
 	static Point centroid(const Face_handle & fh);
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
@@ -570,6 +605,7 @@ private:
 	std::vector<uint32_t> m_refinedCellIdToUnrefined;
 	bool m_isConnected;
 	std::mutex m_lock;
+	int m_cs; //construction state
 public:
 	OsmTriangulationRegionStore();
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
