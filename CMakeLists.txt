@@ -44,6 +44,7 @@ set(LIB_SOURCES_CPP
 	src/AreaExtractorFilters.cpp 
 	src/types.cpp
 	src/OsmTriangulationRegionStore.cpp
+	src/OsmGridRegionTree.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC
