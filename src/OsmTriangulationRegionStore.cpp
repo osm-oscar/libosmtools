@@ -521,6 +521,11 @@ void OsmTriangulationRegionStore::makeConnected() {
 	if (m_isConnected) {
 		return;
 	}
+	
+	if (!(m_cs & CS_HAVE_CELLS)) {
+		throw sserialize::PreconditionViolationException("OsmTriangulationRegionStore::makeConnected: no cells set");
+	}
+	
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 	//Every cell has an id but cells that are not connected may not have different cells
 	//we now have to check for each id if the correspondig faces are all connected through cells with the same id

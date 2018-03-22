@@ -280,8 +280,8 @@ private:
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
 	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
 
-	template<typename T_TRIAN_REFINER>
-	void myRefineMesh(T_TRIAN_REFINER refiner, uint32_t threadCount);
+	template<typename T_REFINER>
+	void myRefineMesh(T_REFINER refiner);
 
 	void setInfinteFacesCellIds();
 	
@@ -316,7 +316,7 @@ public:
 	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2 and provide function bool usesCellIds() if refineAlgo == MyRefineTag
 	///@param refineAlgo selects the refinement algo
 	template<typename T_TRIANG_REFINER>
-	void refineTriangulation(const T_TRIANG_REFINER & meshCriteria, TriangulationRefinementAlgorithmSelector refineAlgo, uint32_t threadCount);
+	void refineTriangulation(TriangulationRefinementAlgorithmSelector refineAlgo, const T_TRIANG_REFINER & meshCriteria);
 	///used for CGALConformingTriangulationTag or CGALGabrielTriangulationTag
 	void refineTriangulation(TriangulationRefinementAlgorithmSelector refineAlgo);
 	
@@ -371,7 +371,7 @@ public:
 };
 
 template<typename T_TRIANG_REFINER>
-void OsmTriangulationRegionStore::refineTriangulation(const T_TRIANG_REFINER & meshCriteria, TriangulationRefinementAlgorithmSelector refineAlgo, uint32_t threadCount) {
+void OsmTriangulationRegionStore::refineTriangulation(TriangulationRefinementAlgorithmSelector refineAlgo, const T_TRIANG_REFINER & meshCriteria) {
 	if (refineAlgo == TRAS_NoRefinement || !(m_cs & CS_HAVE_TRIANGULATION)) {
 		return;
 	}
@@ -379,7 +379,7 @@ void OsmTriangulationRegionStore::refineTriangulation(const T_TRIANG_REFINER & m
 	//refine the triangulation
 	switch (refineAlgo) {
 	case TRAS_Osmtools:
-		myRefineMesh(meshCriteria, threadCount);
+		myRefineMesh(meshCriteria);
 		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
 		refineTriangulationFinalize();
 		break;
@@ -418,7 +418,7 @@ OsmTriangulationRegionStore::snapTriangulation(sserialize::Static::spatial::Tria
 }
 
 template<typename T_REFINER>
-void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner, uint32_t threadCount) {
+void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner) {
 	struct RefinePoint {
 		Vertex_handle vh;
 		Point p;
@@ -437,7 +437,7 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner, uint32_t threa
 	};
 	
 	if (T_REFINER::usesCellIds() && !(m_cs & CS_HAVE_CELLS)) {
-		assignCellIds(threadCount);
+		throw sserialize::PreconditionViolationException("OsmTriangulationRegionStore::refineCells: mesh criteria needs cells");
 	}
 	
 	uint32_t refineCount = 0;
