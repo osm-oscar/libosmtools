@@ -278,7 +278,6 @@ void RefineBySize::begin() {
 void RefineBySize::end() {}
 
 bool RefineBySize::refine(const State & state) {
-	using ::osmtools::detail::OsmTriangulationRegionStore::centroid;
 	std::map<uint32_t, sserialize::spatial::GeoRect> bounds;
 	for(uint32_t i(0), s(state.cg.size()); i < s; ++i) {
 		uint32_t cellId = state.newFaceCellIds[i];
@@ -910,19 +909,19 @@ OsmTriangulationRegionStore::init(std::shared_ptr<OsmGridRegionTreeBase> grt, ui
 	m_cs = CS_HAVE_TRIANGULATION;
 }
 
-void OsmTriangulationRegionStore::refineTriangulation(RefinementAlgoTags refineAlgo) {
+void OsmTriangulationRegionStore::refineTriangulation(TriangulationRefinementAlgorithmSelector refineAlgo) {
 	if (! (m_cs & CS_HAVE_TRIANGULATION)) {
 		std::cout << "No triangulation available" << std::endl;
 		return;
 	}
 	CGAL::Triangulation_conformer_2<Triangulation> conform(m_grid.tds());
 	switch (refineAlgo) {
-	case CGALConformingTriangulationTag:
+	case TRAS_ConformingTriangulation:
 		conform.make_conforming_Delaunay();
 		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
 		refineTriangulationFinalize();
 		break;
-	case CGALGabrielTriangulationTag:
+	case TRAS_GabrielTriangulation:
 		conform.make_conforming_Delaunay();
 		conform.make_conforming_Gabriel();
 		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
