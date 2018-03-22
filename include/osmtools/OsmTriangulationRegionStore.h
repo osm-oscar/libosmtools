@@ -213,8 +213,6 @@ private:
 	sserialize::spatial::DistanceCalculator m_dc;
 };
 
-
-
 template<typename TDS>
 class CentroidDistanceBaseMeshCriteria {
 public:
@@ -582,9 +580,10 @@ private:
 		CS_EMPTY=0x0,
 		CS_HAVE_TRIANGULATION=0x1, //triangulation is there, but no cells are assigned
 		CS_HAVE_CELLS=0x2, //faces have cell ids assigned
-		CS_CLEAN_GEOMETRY=0x4 //triangulation has clean geometry
-		CS_HAVE_GRID=0x8, //grid for fast look-up is available
-		CS_HAVE_REFINED_CELLS=0x10 // cells are refined
+		CS_HAVE_REFINED_TRIANGULATION=0x4,
+		CS_HAVE_SNAPPED_TRIANGULATION=0x8, //triangulation has snapped geometry
+		CS_HAVE_GRID=0x10, //grid for fast look-up is available
+		CS_HAVE_REFINED_CELLS=0x20 // cells are refined
 	} ConstructionState;
 	
 private:
@@ -592,13 +591,16 @@ private:
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
 	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
 
-	template<typename T_REFINER, typename T_Dummy>
-	void myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount);
+	template<typename T_TRIAN_REFINER>
+	void myRefineMesh(T_TRIAN_REFINER refiner, uint32_t threadCount);
 
 	void setInfinteFacesCellIds();
-	template<typename T_DUMMY>
-	void assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount, bool reUseOld = true);
+	
+	void refineTriangulationFinalize();
+	
+	std::shared_ptr<OsmGridRegionTreeBase> & grt() { return m_grt; }
 private:
+	std::shared_ptr<OsmGridRegionTreeBase> m_grt;
 	GridLocator m_grid;
 	RegionListContainer m_cellLists;
 	std::vector<RegionList> m_cellIdToCellList;
@@ -611,25 +613,31 @@ public:
 	OsmTriangulationRegionStore(const OsmTriangulationRegionStore & other) = delete;
 	~OsmTriangulationRegionStore() {}
 	void clear();
+	void clearCells();
+	void clearRefinement();
+	const std::shared_ptr<OsmGridRegionTreeBase> & grt() const { return m_grt; }
 	const GridLocator & grid() const { return m_grid; }
 	const Triangulation & tds() const { return m_grid.tds(); }
 	Triangulation & tds() { return m_grid.tds(); }
 	inline uint32_t cellCount() const { return (uint32_t) m_refinedCellIdToUnrefined.size(); }
 	inline uint32_t unrefinedCellCount() const { return (uint32_t) m_cellIdToCellList.size(); }
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
+	void init(std::shared_ptr<OsmGridRegionTreeBase> grt, uint32_t threadCount);
+
 	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2 and provide function bool usesCellIds() if refineAlgo == MyRefineTag
-	///@param refineAlgo selects the refinement algo, if CGALConformingTriangulationTag or CGALGabrielTriangulationTag, then meshCriteria is ignored
-	template<typename TDummy,
-		typename T_TRIANG_REFINER = OsmTriangulationRegionStore::RegionOnlyLipschitzMeshCriteria,
-		typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
-	void init(OsmGridRegionTree< TDummy >& grt,
-				uint32_t threadCount,
-				T_TRIANG_REFINER* meshCriteria = 0,
-				osmtools::OsmTriangulationRegionStore::RefinementAlgoTags refineAlgo = MyRefineTag,
-				sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType = sserialize::Static::spatial::Triangulation::GCT_NONE,
-				T_REMOVED_EDGES re = T_REMOVED_EDGES());
+	///@param refineAlgo selects the refinement algo
+	template<typename T_TRIANG_REFINER>
+	void refineTriangulation(const T_TRIANG_REFINER & meshCriteria, RefinementAlgoTags refineAlgo, uint32_t threadCount);
+	///used for CGALConformingTriangulationTag or CGALGabrielTriangulationTag
+	void refineTriangulation(RefinementAlgoTags refineAlgo);
+	
+	template<typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
+	void snapTriangulation(sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType, T_REMOVED_EDGES re = T_REMOVED_EDGES());
 	
 	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
+	
+	void assignCellIds(uint32_t threadCount);
+	
 	///Splits cells into connected cells
 	void makeConnected();
 	///First calls makeConnected(). Then splits cells into smaller cells as long as refiner returns true
@@ -640,7 +648,6 @@ public:
 	
 	void refineBySize(uint32_t cellSizeTh, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
 	
-	void clearRefinement();
 	inline uint32_t unrefinedCellId(uint32_t cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
 	uint32_t cellId(double lat, double lon);
 	inline uint32_t cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
@@ -711,8 +718,52 @@ private:
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
-template<typename T_REFINER, typename T_Dummy>
-void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegionTree<T_Dummy> & grt, uint32_t threadCount) {
+
+
+template<typename T_TRIANG_REFINER>
+void OsmTriangulationRegionStore::refineTriangulation(const T_TRIANG_REFINER & meshCriteria, RefinementAlgoTags refineAlgo, uint32_t threadCount) {
+	if (refineAlgo == NoRefineTag || !(m_cs & CS_HAVE_TRIANGULATION)) {
+		return;
+	}
+	
+	//refine the triangulation
+	if (refineAlgo == MyRefineTag) {
+		myRefineMesh(meshCriteria, threadCount);
+		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
+		refineTriangulationFinalize();
+	}
+	else if (refineAlgo == CGALRefineTag) {
+		CGAL::Delaunay_mesher_2<Triangulation, T_TRIANG_REFINER> mesher(m_grid.tds(), meshCriteria);
+		mesher.refine_mesh();
+		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
+		refineTriangulationFinalize();
+	}
+	else if (refineAlgo & __CGALPredefinedRefineTag) {
+		refineTriangulation(refineAlgo);
+	}
+}
+
+template<typename T_REMOVED_EDGES>
+void
+OsmTriangulationRegionStore::snapTriangulation(sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType, T_REMOVED_EDGES re)
+{
+	if (geoCleanType != sserialize::Static::spatial::Triangulation::GCT_NONE) {
+		sserialize::Static::spatial::Triangulation::prepare(tds(), re,  geoCleanType, 0.01);
+		if (m_cs & CS_HAVE_REFINED_CELLS) {
+			std::cerr << "WARNING: OsmTriangulationRegionStore::snapTriangulation: removing cell refinement" << std::endl;
+			clearRefinement();
+		}
+		if (m_cs & CS_HAVE_CELLS) {
+			std::cerr << "WARNING: OsmTriangulationRegionStore::snapTriangulation: removing cells" << std::endl;
+			m_cs &= ~CS_HAVE_CELLS;
+		}
+		m_cs |= CS_HAVE_SNAPPED_TRIANGULATION;
+	}
+	SSERIALIZE_VERY_EXPENSIVE_ASSERT(selfTest());
+}
+
+template<typename T_REFINER>
+void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner, uint32_t threadCount) {
 	struct RefinePoint {
 		Vertex_handle vh;
 		Point p;
@@ -730,8 +781,8 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 		Vertex_handle vh;
 	};
 	
-	if (T_REFINER::usesCellIds()) {
-		assignCellIds(grt, threadCount);
+	if (T_REFINER::usesCellIds() && !(m_cs & CS_HAVE_CELLS)) {
+		assignCellIds(threadCount);
 	}
 	
 	uint32_t refineCount = 0;
@@ -765,303 +816,6 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER & refiner, OsmGridRegio
 	}
 	std::cout << "Refined triangulation with a total of " << refineCount << " extra points" << std::endl;
 }
-
-///assign cellIds, while keeping the old cellIds if reUseOld is true
-template<typename T_DUMMY>
-void OsmTriangulationRegionStore::assignCellIds(OsmGridRegionTree<T_DUMMY> & grt, uint32_t threadCount, bool reUseOld) {
-	if (!reUseOld) {
-		m_cellIdToCellList.clear();
-		m_cellLists.clear();
-		m_refinedCellIdToUnrefined.clear();
-		m_isConnected = false;
-		for(All_faces_iterator it(m_grid.tds().all_faces_begin()), end(m_grid.tds().all_faces_end()); it != end; ++it) {
-			it->info().clear();
-		}
-	}
-	struct CellListKey {
-		uint64_t hash;
-		RegionList list;
-		CellListKey() : hash(0) {}
-		explicit CellListKey(uint64_t h, const RegionList & l) : hash(h), list(l) {}
-		explicit CellListKey(uint64_t h, RegionListContainer* c, RegionList::size_type off, RegionList::size_type size) : hash(h), list(c, off, size) {}
-		CellListKey(const CellListKey &) = default;
-		CellListKey(CellListKey &&) = default;
-		CellListKey & operator=(const CellListKey&) = default;
-		CellListKey & operator=(CellListKey&&) = default;
-		inline bool operator!=(const CellListKey & other) const { return hash != other.hash || list != other.list; }
-		inline bool operator==(const CellListKey & other) const  { return hash == other.hash && list == other.list; }
-	};
-	
-	struct CellListKeyHasher {
-		CellListKeyHasher() = default;
-		CellListKeyHasher(const CellListKeyHasher &) = default;
-		CellListKeyHasher & operator=(const CellListKeyHasher &) = default;
-		inline std::size_t operator()(const CellListKey & v) const { return v.hash; }
-	};
-	
-	struct Context {
-		std::unordered_map<CellListKey, uint32_t, CellListKeyHasher> cellListToCellId;
-		OsmGridRegionTree<T_DUMMY> * grt;
-		RegionListContainer * p_cellLists;
-		sserialize::ProgressInfo pinfo;
-		uint32_t finishedFaces;
-		Triangulation::Finite_faces_iterator facesIt;
-		Triangulation::Finite_faces_iterator facesEnd;
-		std::mutex iteratorLock;
-		std::mutex cellListLock;
-	} ctx;
-	ctx.grt = &grt;
-	ctx.p_cellLists = &m_cellLists;
-	ctx.finishedFaces = 0;
-	ctx.facesIt = m_grid.tds().finite_faces_begin();
-	ctx.facesEnd = m_grid.tds().finite_faces_end();
-	
-	setInfinteFacesCellIds();
-	//cells that are not in any region get cellid 0
-	{
-		std::hash<RegionList> hasher;
-		{
-			RegionList tmp(ctx.p_cellLists, 0, 0);
-			ctx.cellListToCellId[CellListKey(hasher(tmp), tmp)] = 0;
-		}
-		for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
-			const auto & tmp = m_cellIdToCellList.at(i);
-			ctx.cellListToCellId[CellListKey(hasher(tmp), tmp)] = i;
-		}
-	}
-
-	struct WorkFunc {
-		Context * ctx;
-		RegionList::container_type tmpCellListContainer;
-		std::back_insert_iterator<RegionList::container_type> tmpCellListInserter;
-		std::hash<RegionList> cellListHasher;
-		CellListKey tmpCellListKey;
-		Point centroid;
-		Face_handle fh;
-		WorkFunc(Context * ctx) : ctx(ctx), tmpCellListInserter(tmpCellListContainer) {
-			tmpCellListContainer.reserve(64);
-		}
-		WorkFunc(const WorkFunc & other) : WorkFunc(other.ctx) {}
-		void operator()() {
-			while (true) {
-				{
-					std::lock_guard<std::mutex> lck(ctx->iteratorLock);
-					while (true) {
-						if (ctx->facesIt == ctx->facesEnd) {
-							return;
-						}
-						if (!ctx->facesIt->info().hasCellId()) {
-							break;
-						}
-						++(ctx->facesIt);
-					}
-					fh = ctx->facesIt;
-					++(ctx->facesIt);
-					centroid = OsmTriangulationRegionStore::centroid(fh);
-				}
-				
-				uint32_t faceCellId = 0;
-				{
-					double x = CGAL::to_double(centroid.x());
-					double y = CGAL::to_double(centroid.y());
-					tmpCellListContainer.clear();
-					ctx->grt->find(x, y, tmpCellListInserter);
-					std::sort(tmpCellListContainer.begin(), tmpCellListContainer.end());
-					SSERIALIZE_NORMAL_ASSERT(sserialize::is_strong_monotone_ascending(tmpCellListContainer.begin(), tmpCellListContainer.end()));
-					tmpCellListKey.list = RegionList(&tmpCellListContainer);
-					tmpCellListKey.hash = cellListHasher(tmpCellListKey.list);
-				}
-				
-				{
-					std::lock_guard<std::mutex> lck(ctx->cellListLock);
-					auto cellListToCellIdIt = ctx->cellListToCellId.find(tmpCellListKey);
-					if (cellListToCellIdIt == ctx->cellListToCellId.end()) {
-						faceCellId = (uint32_t) ctx->cellListToCellId.size();
-						auto off = ctx->p_cellLists->size();
-						ctx->p_cellLists->push_back(tmpCellListKey.list.begin(), tmpCellListKey.list.end());
-						ctx->cellListToCellId[CellListKey(tmpCellListKey.hash, ctx->p_cellLists, off, tmpCellListKey.list.size())] = faceCellId;
-						SSERIALIZE_CHEAP_ASSERT_EQUAL(ctx->cellListToCellId.size(), faceCellId+1);
-					}
-					else {
-						faceCellId = cellListToCellIdIt->second;
-					}
-				}
-				
-				SSERIALIZE_CHEAP_ASSERT((tmpCellListKey.list.size() || faceCellId == 0) && (faceCellId != 0 || !tmpCellListKey.list.size()));
-				fh->info().setCellId(faceCellId);
-				ctx->finishedFaces += 1;
-				ctx->pinfo(ctx->finishedFaces);
-			}
-		}
-	};
-	ctx.pinfo.begin(m_grid.tds().number_of_faces(), "Setting initial cellids");
-	std::vector<std::thread> threads;
-	for(uint32_t i(0); i < threadCount; ++i) {
-		threads.push_back(std::thread(WorkFunc(&ctx)));
-	}
-	for(std::thread & x : threads) {
-		x.join();
-	}
-	ctx.pinfo.end();
-
-	m_cellIdToCellList.resize(ctx.cellListToCellId.size());
-	for(const auto & x : ctx.cellListToCellId) {
-		m_cellIdToCellList.at(x.second) = x.first.list;
-	}
-	
-	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
-}
-
-template<typename TDummy, typename T_TRIANG_REFINER, typename T_REMOVED_EDGES>
-void
-OsmTriangulationRegionStore::init(
-	OsmGridRegionTree<TDummy> & grt,
-	uint32_t threadCount,
-	T_TRIANG_REFINER * meshCriteria, RefinementAlgoTags refineAlgo,
-	sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType, T_REMOVED_EDGES re
-	)
-{
-	if (!threadCount) {
-		threadCount = std::thread::hardware_concurrency();
-	}
-	this->clear();
-	{
-		//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
-		//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
-		typedef std::pair<double, double> RawGeoPoint;
-		typedef typename OsmGridRegionTree<TDummy>::GeoPolygon GeoPolygon;
-		typedef typename OsmGridRegionTree<TDummy>::GeoMultiPolygon GeoMultiPolygon;
-		std::unordered_map<RawGeoPoint, uint32_t> gpToId;
-		std::vector<Point> pts;
-		std::unordered_set< std::pair<uint32_t, uint32_t> > segments;
-		
-		auto handlePolygonPoints = [&gpToId](const GeoPolygon * gp) {
-			typename GeoPolygon::const_iterator it(gp->cbegin()), end(gp->cend());
-			for(; it != end; ++it) {
-				RawGeoPoint itGp = *it;
-				if (!gpToId.count(itGp)) {
-					uint32_t gpId = (uint32_t) gpToId.size();
-					gpToId[itGp] = gpId;
-				}
-			}
-		};
-		
-		std::cout << "OsmTriangulationRegionStore: extracting points..." << std::flush;
-		for(sserialize::spatial::GeoRegion* r : grt.regions()) {
-			if (r->type() == sserialize::spatial::GS_POLYGON) {
-				const GeoPolygon * gp = static_cast<const GeoPolygon*>(r);
-				handlePolygonPoints(gp);
-			}
-			else if (r->type() == sserialize::spatial::GS_MULTI_POLYGON) {
-				const GeoMultiPolygon * gmp = static_cast<const GeoMultiPolygon*>(r);
-				for(const GeoPolygon & gp : gmp->outerPolygons()) {
-					handlePolygonPoints(&gp);
-				}
-				for(const GeoPolygon & gp : gmp->innerPolygons()) {
-					handlePolygonPoints(&gp);
-				}
-			}
-		}
-		std::cout << "done" << std::endl;
-		
-		auto handlePolygonSegments = [&gpToId, &segments](const GeoPolygon * gp) {
-			typename GeoPolygon::const_iterator it(gp->cbegin()), prev(gp->cbegin()), end(gp->cend());
-			for(++it; it != end; ++it, ++prev) {
-				RawGeoPoint itGp = *it;
-				RawGeoPoint prevGp = *prev;
-				if ((itGp.first < -170.0 && prevGp.first > 170.0) || (itGp.first > 170.0 && prevGp.first < -170)) {
-					std::cout << "Skipped edge crossing latitude boundary(-180->180)\n";
-					continue;
-				}
-				segments.insert( std::pair<uint32_t, uint32_t>(gpToId.at(itGp), gpToId.at(prevGp)) );
-			}
-		};
-		std::cout << "OsmTriangulationRegionStore: extracting segments..." << std::flush;
-		for(sserialize::spatial::GeoRegion* r : grt.regions()) {
-			if (r->type() == sserialize::spatial::GS_POLYGON) {
-				const GeoPolygon * gp = static_cast<const GeoPolygon*>(r);
-				handlePolygonSegments(gp);
-			}
-			else if (r->type() == sserialize::spatial::GS_MULTI_POLYGON) {
-				const GeoMultiPolygon * gmp = static_cast<const GeoMultiPolygon*>(r);
-				for(const GeoPolygon & gp : gmp->outerPolygons()) {
-					handlePolygonSegments(&gp);
-				}
-				for(const GeoPolygon & gp : gmp->innerPolygons()) {
-					handlePolygonSegments(&gp);
-				}
-			}
-		}
-		std::cout << "done" << std::endl;
-		
-		std::cout << "Found " << gpToId.size() << " different points creating " << segments.size() << " different segments" << std::endl;
-		
-		std::cout << "Converting points to CGAL points..." << std::flush;
-		pts.resize(gpToId.size());
-		for(const auto & x : gpToId) {
-			pts.at(x.second) = Point(x.first.first, x.first.second);
-		}
-		gpToId = decltype(gpToId)();
-		std::cout << "done" << std::endl;
-		
-#ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
-		for(const std::pair<uint32_t, uint32_t> & s : segments) {
-			SSERIALIZE_EXPENSIVE_ASSERT(s.first < pts.size());
-			SSERIALIZE_EXPENSIVE_ASSERT(s.second < pts.size());
-		}
-#endif
-		std::cout << "OsmTriangulationRegionStore: creating triangulation..." << std::flush;
-		sserialize::TimeMeasurer tm;
-		tm.begin();
-		m_grid.tds().insert_constraints(pts.cbegin(), pts.cend(), segments.cbegin(), segments.cend());
-		tm.end();
-		std::cout << "took " << tm << std::endl;
-	}
-	
-	
-	//refine the triangulation
-	if (refineAlgo == MyRefineTag && meshCriteria) {
-		myRefineMesh(*meshCriteria, grt, threadCount);
-	}
-	else if (refineAlgo == CGALRefineTag) {
-		CGAL::Delaunay_mesher_2<Triangulation, T_TRIANG_REFINER> mesher(m_grid.tds(), *meshCriteria);
-		mesher.refine_mesh();
-	}
-	else if (refineAlgo & __CGALPredefinedRefineTag) {
-		CGAL::Triangulation_conformer_2<Triangulation> conform(m_grid.tds());
-		switch (refineAlgo) {
-		case CGALConformingTriangulationTag:
-			conform.make_conforming_Delaunay();
-			break;
-		case CGALGabrielTriangulationTag:
-			conform.make_conforming_Delaunay();
-			conform.make_conforming_Gabriel();
-			break;
-		default:
-			throw sserialize::UnsupportedFeatureException("Unsupported refinement algorithm: " + std::to_string(refineAlgo));
-			break;
-		}
-	}
-
-	//we now have to assign every face its cellid
-	//a face lives in multiple regions, so every face has a unique list of region ids
-	//faces that are connected and have the same region-list get the same cellid
-	assignCellIds(grt, threadCount);
-
-	
-	if (geoCleanType != sserialize::Static::spatial::Triangulation::GCT_NONE) {
-		sserialize::Static::spatial::Triangulation::prepare(tds(), re,  geoCleanType, 0.01);
-		assignCellIds(grt, threadCount, false);
-	}
-	
-	m_refinedCellIdToUnrefined.reserve(m_cellIdToCellList.size());
-	for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
-		m_refinedCellIdToUnrefined.push_back(i);
-	}
-	std::cout << "Found " << m_cellIdToCellList.size() << " unrefined cells" << std::endl;
-	SSERIALIZE_VERY_EXPENSIVE_ASSERT(selfTest());
-}
-
 
 template<typename T_OUTPUT_ITERATOR>
 void OsmTriangulationRegionStore::regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out) {
