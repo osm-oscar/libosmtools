@@ -168,6 +168,66 @@ public:
 };
 
 template<typename TDS>
+class EdgeLengthMeshCriteria: public CentroidDistanceBaseMeshCriteria<TDS> {
+public:
+	typedef CentroidDistanceBaseMeshCriteria<TDS> MyParentClass;
+	typedef typename MyParentClass::Face_handle Face_handle;
+	typedef typename MyParentClass::Point Point;
+public:
+	typedef double Quality;
+	struct Is_bad {
+		double m_r;
+		sserialize::spatial::DistanceCalculator m_dc;
+		Is_bad(double maxLen, const sserialize::spatial::DistanceCalculator & dc) : m_r(maxLen), m_dc(dc) {}
+		
+		CGAL::Mesh_2::Face_badness operator()(Quality q) const {
+			if (q > m_r) {
+				return CGAL::Mesh_2::IMPERATIVELY_BAD;
+			}
+			else {
+				return CGAL::Mesh_2::NOT_BAD;
+			}
+		}
+		
+		Quality quality(CGAL::Mesh_2::Face_badness fb) const {
+			if (fb == CGAL::Mesh_2::NOT_BAD) {
+				return m_r;
+			}
+			else {
+				return std::numeric_limits<double>::max();
+			}
+		}
+		
+		CGAL::Mesh_2::Face_badness operator()(Face_handle fh, Quality & q) const {
+			std::array<Point, 3> pts = {{
+				fh->vertex(0)->point(),
+				fh->vertex(1)->point(),
+				fh->vertex(2)->point()
+			}};
+			q = 0;
+			for(int i(0); i < 3; ++i) {
+				double p1x = CGAL::to_double(pts[i].x());
+				double p1y = CGAL::to_double(pts[i].y());
+				double p2x = CGAL::to_double(pts[TDS::cw(i)].x());
+				double p2y = CGAL::to_double(pts[TDS::cw(i)].y());
+				double dist = m_dc.calc(p1x, p1y, p2x, p2y);
+				q = std::max(dist, q);
+			}
+			return (*this)(q);
+		};
+	};
+private:
+	double m_r;
+public:
+	///@param maxLength the maxium length of the longest edge
+	EdgeLengthMeshCriteria(double maxLength) :
+		MyParentClass(Construct_refine_points::T_LONGEST_EDGE),
+		m_r(maxLength)
+	{}
+	Is_bad is_bad_object() const { return Is_bad(m_r, MyParentClass::dc()); }
+};
+
+template<typename TDS>
 class EdgeLengthRatioMeshCriteria: public CentroidDistanceBaseMeshCriteria<TDS> {
 public:
 	typedef CentroidDistanceBaseMeshCriteria<TDS> MyParentClass;
@@ -216,7 +276,13 @@ public:
 				shortest = std::min(dist, shortest);
 			}
 			shortest = std::max<double>(shortest, std::numeric_limits<double>::epsilon());
-			q = longest/shortest;
+			longest = std::max<double>(longest, std::numeric_limits<double>::epsilon());
+			if (longest < 1.0 && shortest < 1.0) { //very small triangle, refining these would be useless (even 1 meter may be to big)
+				q = 1.0;
+			}
+			else {
+				q = longest/shortest;
+			}
 			return (*this)(q);
 		};
 	};
@@ -224,7 +290,10 @@ private:
 	double m_r;
 public:
 	///@param maxRatio the maxium ratio between the shortest and longest edge
-	EdgeLengthRatioMeshCriteria(double maxRatio) : m_r(maxRatio) {}
+	EdgeLengthRatioMeshCriteria(double maxRatio) :
+		MyParentClass(Construct_refine_points::T_LONGEST_EDGE),
+		m_r(maxRatio)
+	{}
 	Is_bad is_bad_object() const { return Is_bad(m_r, MyParentClass::dc()); }
 };
 
