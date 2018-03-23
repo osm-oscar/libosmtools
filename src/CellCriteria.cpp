@@ -61,9 +61,20 @@ bool CellDiagonalCriteria::refine(const State & state) {
 	return false;
 }
 
-bool CellDiagonalCriteria::refine(uint32_t, const State &) {
-	throw sserialize::UnimplementedFunctionException("RefineBySize");
-	return false;
+bool CellDiagonalCriteria::refine(uint32_t cellId, const State & state) {
+	sserialize::spatial::GeoRect bound;
+	for(uint32_t i(0), s(state.cg.size()); i < s; ++i) {
+		if (cellId == state.newFaceCellIds.at(i)) {
+			auto fh = state.cg.face(i);
+			for(int i(0); i < 3; ++i) {
+				const auto & p = fh->vertex(i)->point();
+				double lat = CGAL::to_double(p.x());
+				double lon = CGAL::to_double(p.y());
+				bound.enlarge(lat, lon);
+			}
+		}
+	}
+	return bound.diagInM() > m_maxCellDiameter;
 }
 
 CellDiagonalCriteria::CellCriteriaInterface * CellDiagonalCriteria::copy() {
