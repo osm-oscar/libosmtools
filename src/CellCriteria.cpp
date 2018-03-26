@@ -48,21 +48,26 @@ void CellDiagonalCriteria::begin() {
 void CellDiagonalCriteria::end() {}
 
 bool CellDiagonalCriteria::refine(const State & state) {
-	std::map<uint32_t, sserialize::spatial::GeoRect> bounds;
+	struct Data {
+		std::size_t triangCount = 0;
+		sserialize::spatial::GeoRect bound;
+	};
+	std::map<uint32_t, Data> data;
 	for(uint32_t i(0), s(state.cg.size()); i < s; ++i) {
 		uint32_t cellId = state.newFaceCellIds[i];
-		sserialize::spatial::GeoRect & bound = bounds[cellId];
+		Data & d = data[cellId];
 		auto fh = state.cg.face(i);
 		for(int i(0); i < 3; ++i) {
 			const auto & p = fh->vertex(i)->point();
 			double lat = CGAL::to_double(p.x());
 			double lon = CGAL::to_double(p.y());
-			bound.enlarge(lat, lon);
+			d.bound.enlarge(lat, lon);
+			d.triangCount += 1;
 		}
 	}
 	
-	for(const auto & bound : bounds) {
-		if (bound.second.diagInM() > m_maxCellDiameter) {
+	for(const auto & d : data) {
+		if (d.second.triangCount > 1 && d.second.bound.diagInM() > m_maxCellDiameter) {
 			return true;
 		}
 	}
@@ -71,6 +76,7 @@ bool CellDiagonalCriteria::refine(const State & state) {
 
 bool CellDiagonalCriteria::refine(uint32_t cellId, const State & state) {
 	sserialize::spatial::GeoRect bound;
+	std::size_t triangCount = 0;
 	for(uint32_t i(0), s(state.cg.size()); i < s; ++i) {
 		if (cellId == state.newFaceCellIds.at(i)) {
 			auto fh = state.cg.face(i);
@@ -79,10 +85,11 @@ bool CellDiagonalCriteria::refine(uint32_t cellId, const State & state) {
 				double lat = CGAL::to_double(p.x());
 				double lon = CGAL::to_double(p.y());
 				bound.enlarge(lat, lon);
+				++triangCount;
 			}
 		}
 	}
-	return bound.diagInM() > m_maxCellDiameter;
+	return triangCount > 1 && bound.diagInM() > m_maxCellDiameter;
 }
 
 CellDiagonalCriteria::CellCriteriaInterface * CellDiagonalCriteria::copy() {
