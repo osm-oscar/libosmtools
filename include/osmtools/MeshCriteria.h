@@ -52,6 +52,7 @@ public:
 			}
 			for(int i(0); i < 3; ++i) {
 				if (el[i] == longest) {
+					//BUG:will only work correctly for exact construction kernels
 					*out = CGAL::midpoint(fh->vertex(i)->point(), fh->vertex(TDS::cw(i))->point());
 					++out;
 				}
@@ -60,6 +61,7 @@ public:
 		}
 		case T_ON_EDGES:
 			for(int i(0); i < 3; ++i) {
+				//BUG:will only work correctly for exact construction kernels
 				*out = CGAL::midpoint(fh->vertex(i)->point(), fh->vertex(TDS::cw(i))->point());
 				++out;
 			}
