@@ -7,6 +7,10 @@ CellTriangleCountCriteria::CellTriangleCountCriteria(uint32_t cellSizeTh) :
 m_cellSizeTh(cellSizeTh)
 {}
 
+int CellTriangleCountCriteria::dataDependence() const {
+	return DD_CELLSIZES;
+}
+
 bool CellTriangleCountCriteria::init(const ::osmtools::OsmTriangulationRegionStore & store) {
 	return m_cellSizeTh < store.grid().tds().number_of_faces();
 }
@@ -29,6 +33,10 @@ CellDiagonalCriteria::CellDiagonalCriteria(double maxCellDiameter) :
 m_maxCellDiameter(maxCellDiameter),
 m_dc(sserialize::spatial::DistanceCalculator::DCT_GEODESIC_ACCURATE)
 {}
+
+int CellDiagonalCriteria::dataDependence() const {
+	return  DD_CELL_GRAPH | DD_NEW_FACE_CELL_IDS;
+}
 
 bool CellDiagonalCriteria::init(const ::osmtools::OsmTriangulationRegionStore & store) {
 	return store.grid().grid().rect().diagInM() > m_maxCellDiameter;

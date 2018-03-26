@@ -281,6 +281,7 @@ OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const O
 }
 
 void OsmTriangulationRegionStore::cellInfo(std::vector<Face_handle> & cellRep, std::vector<uint32_t> & cellSizes) {
+	SSERIALIZE_EXPENSIVE_ASSERT(selfCheck());
 	cellRep.clear();
 	cellSizes.clear();
 	cellSizes.resize(m_refinedCellIdToUnrefined.size(), 0);
@@ -601,6 +602,7 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 		return;
 	}
 	
+	int dd = refiner->dataDependence();
 	CellCriteriaInterface::State state;
 	
 	splitPerRun = std::max<uint32_t>(splitPerRun, 2);
@@ -622,21 +624,36 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 		sserialize::ProgressInfo pinfo;
 		pinfo.begin(state.cellRep.size(), "Splitting");
 		for(uint32_t cellId(1), cellIdInitialSize(uint32_t(state.cellRep.size())); cellId < cellIdInitialSize; ++cellId) {
-			if (!refiner->refine(cellId, state) ) {
-				continue;
-			}
+			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
+
 			state.currentCells.clear();
 			state.newFaceCellIds.clear();
 			state.newCellReps.clear();
 			stack.clear();
 			hopDists.clear();
+
+			if (dd & CellCriteriaInterface::DD_CELL_GRAPH) {
+				ctGraph(state.cellRep.at(cellId), state.cg);
+			}
 			
-			state.newFaceCellIds.resize(state.cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
-			hopDists.resize(state.cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
+			if (dd & CellCriteriaInterface::DD_NEW_FACE_CELL_IDS) {
+				state.newFaceCellIds.assign(state.cellSizes.at(cellId), cellId);
+			}
 			
-			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
-// 			uint32_t mpt = m_faceToCellId[cellRep.at(cellId)];
-			ctGraph(state.cellRep.at(cellId), state.cg);
+			if (dd & (CellCriteriaInterface::DD_NEW_CELL_REPS | CellCriteriaInterface::DD_CURRENT_CELLS)) {
+				throw sserialize::UnimplementedFunctionException("OsmTriangulationRegionStore::refineCells with a refiner with data dependence on DD_NEW_CELL_REPS | DD_CURRENT_CELLS");
+			}
+			
+			if (!refiner->refine(cellId, state) ) {
+				continue;
+			}
+			
+			state.newFaceCellIds.assign(state.cellSizes.at(cellId), OsmTriangulationRegionStore::UnsetFacesCellId);
+			hopDists.assign(state.cellSizes.at(cellId), std::numeric_limits<uint32_t>::max());
+			
+			if (! (dd & CellCriteriaInterface::DD_CELL_GRAPH) ) {
+				ctGraph(state.cellRep.at(cellId), state.cg);
+			}
 			SSERIALIZE_CHEAP_ASSERT(state.cg.size() == state.cellSizes.at(cellId));
 			
 			uint32_t currentGenerator;

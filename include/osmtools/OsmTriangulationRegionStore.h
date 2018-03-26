@@ -231,8 +231,18 @@ public:
 			///the set of new cell ids
 			std::unordered_set<uint32_t> currentCells;
 		};
+		typedef enum {
+			DD_NONE=0x0,
+			DD_CELLSIZES=0x1,
+			DD_CELLREP=0x2,
+			DD_CELL_GRAPH=0x4,
+			DD_NEW_FACE_CELL_IDS=0x8,
+			DD_NEW_CELL_REPS=0x10,
+			DD_CURRENT_CELLS=0x20
+		} DataDependence;
 	public:
 		virtual ~CellCriteriaInterface() {}
+		virtual int dataDependence() const = 0;
 		///@return indicate if refinement is necessary at all
 		virtual bool init(const ::osmtools::OsmTriangulationRegionStore &) { return false; }
 		//tells the refiner that refinement begins

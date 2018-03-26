@@ -9,6 +9,7 @@ class CellTriangleCountCriteria: public ::osmtools::OsmTriangulationRegionStore:
 public:
 	CellTriangleCountCriteria(uint32_t cellSizeTh);
 	virtual ~CellTriangleCountCriteria() {}
+	virtual int dataDependence() const override;
 public:
 	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
 	virtual void begin() override;
@@ -19,10 +20,12 @@ private:
 	uint32_t m_cellSizeTh;
 };
 
+//This should be used in conjuction with a triangle refiner that bounds the maximum edge length
 class CellDiagonalCriteria: public ::osmtools::OsmTriangulationRegionStore::CellCriteriaInterface {
 public:
 	CellDiagonalCriteria(double maxCellDiameter);
 	virtual ~CellDiagonalCriteria() {}
+	virtual int dataDependence() const override;
 public:
 	virtual bool init(const ::osmtools::OsmTriangulationRegionStore & store) override;
 	virtual void begin() override;
