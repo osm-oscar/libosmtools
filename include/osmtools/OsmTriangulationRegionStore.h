@@ -466,6 +466,7 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner) {
 		refinePoints.clear();
 		for(Finite_faces_iterator fit(finite_faces_begin()), fend(finite_faces_end()); fit != fend; ++fit) {
 			rfh = fit;
+			refinePointsInserter.vh = rfh->vertex(0);
 			if (CGAL::Mesh_2::NOT_BAD != bo.operator()(rfh, q)) {
 				crp.template calc<Triangulation, MyBackInserter>(rfh, refinePointsInserter);
 			}
@@ -473,6 +474,7 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner) {
 		}
 		std::cout << " adds up to " << refinePoints.size() << " points. " << std::flush;
 		for(const RefinePoint & rp : refinePoints) {
+			SSERIALIZE_CHEAP_ASSERT(rp.vh != Vertex_handle());
 			m_grid.tds().insert(rp.p, rp.vh->face());
 			++refineCount;
 		}
