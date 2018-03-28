@@ -726,7 +726,7 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 		}
 		for(uint32_t cellId(0), s(cellCount()); cellId < s; ++cellId) {
 			SSERIALIZE_EXPENSIVE_ASSERT(state.cellSizes.at(cellId) == triangCountOfCells.at(cellId));
-			SSERIALIZE_EXPENSIVE_ASSERT(runs != 0xFFFFFFFF || !refiner->refine(cellId));
+			SSERIALIZE_EXPENSIVE_ASSERT(runs != 0xFFFFFFFF || !refiner->refine(cellId, state));
 			SSERIALIZE_EXPENSIVE_ASSERT(cellId == 0 || triangCountOfCells.at(cellId));
 		}
 	}
