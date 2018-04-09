@@ -865,16 +865,24 @@ void OsmTriangulationRegionStore::refineTriangulation(TriangulationRefinementAlg
 		std::cout << "No triangulation available" << std::endl;
 		return;
 	}
-	CGAL::Triangulation_conformer_2<Triangulation> conform(m_grid.tds());
+// 	CGAL::Triangulation_conformer_2<Triangulation> conform(m_grid.tds());
 	switch (refineAlgo) {
 	case TRAS_ConformingTriangulation:
+		#if defined(LIBOSMTOOLS_OSMTRS_USE_EXACT_KERNEL)
+		throw sserialize::UnsupportedFeatureException("OsmTriangulationRegionStore is built with exact kernel. Conforming triangulation needs in-exact kernel");
+		#else
 		conform.make_conforming_Delaunay();
+		#endif
 		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
 		refineTriangulationFinalize();
 		break;
 	case TRAS_GabrielTriangulation:
+		#if defined(LIBOSMTOOLS_OSMTRS_USE_EXACT_KERNEL)
+		throw sserialize::UnsupportedFeatureException("OsmTriangulationRegionStore is built with exact kernel. Gabriel triangulation needs in-exact kernel");
+		#else
 		conform.make_conforming_Delaunay();
 		conform.make_conforming_Gabriel();
+		#endif
 		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
 		refineTriangulationFinalize();
 		break;

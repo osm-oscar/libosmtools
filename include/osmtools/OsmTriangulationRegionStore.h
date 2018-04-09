@@ -1,5 +1,7 @@
 #ifndef LIBOSMTOOLS_OSM_TRIANGULATION_REGION_STORE_H
 #define LIBOSMTOOLS_OSM_TRIANGULATION_REGION_STORE_H
+#define LIBOSMTOOLS_OSMTRS_USE_EXACT_KERNEL
+
 #include <unordered_map>
 
 #include <sserialize/algorithm/hashspecializations.h>
@@ -174,11 +176,14 @@ public:
 		bool hasCellId() const;
 	};
 
-	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
-// 	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
+	#if defined(LIBOSMTOOLS_OSMTRS_USE_EXACT_KERNEL)
+	typedef CGAL::Exact_predicates_exact_constructions_kernel K;
 // 	typedef CGAL::Filtered_simple_cartesian_extended_integer_kernel K;
-	static constexpr bool KernelHasThreadSafeNumberType = std::is_same<K, CGAL::Filtered_simple_cartesian_extended_integer_kernel>::value;
 // 	typedef CGAL::Simple_cartesian_extended_integer_kernel K;
+	#else
+// 	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+	#endif
+	static constexpr bool KernelHasThreadSafeNumberType = std::is_same<K, CGAL::Filtered_simple_cartesian_extended_integer_kernel>::value;
 	typedef CGAL::Exact_intersections_tag Itag;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
 	typedef CGAL::Delaunay_mesh_vertex_base_2<K, Vb> MVb;
@@ -395,10 +400,14 @@ void OsmTriangulationRegionStore::refineTriangulation(TriangulationRefinementAlg
 		break;
 	case TRAS_DelaunayMesher:
 	{
+		#if defined(LIBOSMTOOLS_OSMTRS_USE_EXACT_KERNEL)
+		throw sserialize::UnsupportedFeatureException("OsmTriangulationRegionStore is built with exact kernel. Delaunay mesher needs in-exact kernel");
+		#else
 		CGAL::Delaunay_mesher_2<Triangulation, T_TRIANG_REFINER> mesher(m_grid.tds(), meshCriteria);
 		mesher.refine_mesh();
 		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
 		refineTriangulationFinalize();
+		#endif
 	}
 	case TRAS_ConformingTriangulation:
 	case TRAS_GabrielTriangulation:
