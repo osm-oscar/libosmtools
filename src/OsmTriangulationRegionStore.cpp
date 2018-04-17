@@ -707,6 +707,10 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 				if (cellsTooLarge && voronoiSplitRun+1 < splitPerRun) {//find a new generator
 					std::vector<uint32_t>::const_iterator maxElem = std::max_element(hopDists.begin(), hopDists.end());
 					currentGenerator = (uint32_t) (maxElem - hopDists.begin());
+					//check if there are any triangles left, this is the case if there are triangles at least one hop-dist apart
+					if (state.cellSizes.at( state.newFaceCellIds.at(currentGenerator) ) <= 1) {
+						break;
+					}
 					currentCellId = (uint32_t) m_refinedCellIdToUnrefined.size();
 					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
 					state.cellSizes.push_back(1);
