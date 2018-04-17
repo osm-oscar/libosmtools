@@ -55,3 +55,4 @@ add_library(${PROJECT_NAME} STATIC
 	${INCLUDE_HEADERS}
 )
 target_include_directories(${PROJECT_NAME} PUBLIC ${LIBOSMTOOLS_INCLUDE_DIR})
+target_compile_definitions(${PROJECT_NAME} PUBLIC ${SSERIALIZE_COMPILE_DEFINITIONS})
