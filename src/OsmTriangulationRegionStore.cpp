@@ -281,7 +281,7 @@ OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const O
 }
 
 void OsmTriangulationRegionStore::cellInfo(std::vector<Face_handle> & cellRep, std::vector<uint32_t> & cellSizes) {
-	SSERIALIZE_EXPENSIVE_ASSERT(selfCheck());
+	SSERIALIZE_EXPENSIVE_ASSERT(OsmTriangulationRegionStore::selfTest());
 	cellRep.clear();
 	cellSizes.clear();
 	cellSizes.resize(m_refinedCellIdToUnrefined.size(), 0);
@@ -624,7 +624,9 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 		sserialize::ProgressInfo pinfo;
 		pinfo.begin(state.cellRep.size(), "Splitting");
 		for(uint32_t cellId(1), cellIdInitialSize(uint32_t(state.cellRep.size())); cellId < cellIdInitialSize; ++cellId) {
-			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
+			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId())
+			SSERIALIZE_CHEAP_ASSERT_EQUAL(state.cellRep.at(cellId)->info().cellId(), uint32_t(cellId));
+			SSERIALIZE_CHEAP_ASSERT_SMALLER(uint32_t(0), state.cellSizes.at(cellId));
 
 			state.currentCells.clear();
 			state.newFaceCellIds.clear();
@@ -634,6 +636,7 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 
 			if (dd & CellCriteriaInterface::DD_CELL_GRAPH) {
 				ctGraph(state.cellRep.at(cellId), state.cg);
+				SSERIALIZE_CHEAP_ASSERT_EQUAL(state.cg.size(), state.cellSizes.at(cellId));
 			}
 			
 			if (dd & CellCriteriaInterface::DD_NEW_FACE_CELL_IDS) {
@@ -690,7 +693,8 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 						state.newFaceCellIds.at(nid) = currentCellId;
 						stack.emplace_back(nid, 0);
 					}
-					SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
+					SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId());
+					SSERIALIZE_CHEAP_ASSERT_EQUAL(state.cellRep.at(cellId)->info().cellId(), cellId);
 				}
 				
 				for(uint32_t x : state.currentCells) {
@@ -705,20 +709,22 @@ void OsmTriangulationRegionStore::refineCells(std::shared_ptr<CellCriteriaInterf
 					currentGenerator = (uint32_t) (maxElem - hopDists.begin());
 					currentCellId = (uint32_t) m_refinedCellIdToUnrefined.size();
 					m_refinedCellIdToUnrefined.push_back(m_refinedCellIdToUnrefined.at(cellId));
-					state.cellSizes.push_back(0);
+					state.cellSizes.push_back(1);
 					state.currentCells.insert(currentCellId);
 					state.cellRep.push_back(state.cg.face(currentGenerator));
 					state.newCellReps.push_back(currentGenerator);
 				}
 			}//end for-loop voronoi-split run
-			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
+			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId());
+			SSERIALIZE_CHEAP_ASSERT_EQUAL(state.cellRep.at(cellId)->info().cellId(), cellId);
 			SSERIALIZE_CHEAP_ASSERT(state.currentCells.size() <= splitPerRun);
 			//cellSizes are correctly set, assign faces the new ids
 			for(uint32_t nodeId(0), s(state.cg.size()); nodeId < s; ++nodeId) {
-				SSERIALIZE_CHEAP_ASSERT(state.newFaceCellIds.at(nodeId) != std::numeric_limits<uint32_t>::max());
+				SSERIALIZE_CHEAP_ASSERT_NOT_EQUAL(std::numeric_limits<uint32_t>::max(), state.newFaceCellIds.at(nodeId));
 				state.cg.face(nodeId)->info().setCellId(state.newFaceCellIds.at(nodeId));
 			}
-			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId() && state.cellRep.at(cellId)->info().cellId() == cellId);
+			SSERIALIZE_CHEAP_ASSERT(state.cellRep.at(cellId)->info().hasCellId());
+			SSERIALIZE_CHEAP_ASSERT_EQUAL(cellId, state.cellRep.at(cellId)->info().cellId());
 			
 			pinfo(cellId);
 		}//end for-loop cell-loop
