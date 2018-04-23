@@ -1051,6 +1051,12 @@ void OsmTriangulationRegionStore::assignCellIds(uint32_t threadCount) {
 		m_cellIdToCellList.at(x.second) = x.first.list;
 	}
 	
+	m_refinedCellIdToUnrefined.clear();
+	for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
+		m_refinedCellIdToUnrefined.push_back(i);
+	}
+	
+	m_cs &= ~CS_HAVE_REFINED_CELLS;
 	m_cs |= CS_HAVE_CELLS;
 	
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
