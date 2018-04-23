@@ -514,9 +514,6 @@ void OsmTriangulationRegionStore::clearRefinement() {
 }
 
 void OsmTriangulationRegionStore::initGrid(uint32_t gridLatCount, uint32_t gridLonCount) {
-	if (!(m_cs & CS_HAVE_CELLS)) {
-		throw sserialize::PreconditionViolationException("OsmTriangulationRegionStore::makeConnected: no cells set");
-	}
 	m_grid.initGrid(gridLatCount, gridLonCount);
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 }
