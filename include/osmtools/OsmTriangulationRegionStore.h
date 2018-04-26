@@ -1,6 +1,9 @@
 #ifndef LIBOSMTOOLS_OSM_TRIANGULATION_REGION_STORE_H
 #define LIBOSMTOOLS_OSM_TRIANGULATION_REGION_STORE_H
+#pragma once
+
 #define LIBOSMTOOLS_OSMTRS_USE_EXACT_KERNEL
+// #define LIBOSMTOOLS_OSMTRS_USE_CONSTRAINED_TRIANGULATION_PLUS
 
 #include <unordered_map>
 
@@ -196,7 +199,11 @@ public:
 
 	//choose here to either use the normal CDT or the CDTPlus
 	//WARNING: CDTPlus results in a double free or corruption on planet!
+	#if defined(LIBOSMTOOLS_OSMTRS_USE_CONSTRAINED_TRIANGULATION_PLUS)
+	typedef CDTP CDT;
+	#else
 	typedef CDTBase CDT;
+	#endif
 	typedef CDT Triangulation;
 	
 	typedef Triangulation::Point Point;
@@ -334,6 +341,9 @@ public:
 	void refineTriangulation(TriangulationRefinementAlgorithmSelector refineAlgo, const T_TRIANG_REFINER & meshCriteria);
 	///used for CGALConformingTriangulationTag or CGALGabrielTriangulationTag
 	void refineTriangulation(TriangulationRefinementAlgorithmSelector refineAlgo);
+	
+	///simplify the triangulation
+	void simplify();
 	
 	template<typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
 	void snapTriangulation(sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType, T_REMOVED_EDGES re = T_REMOVED_EDGES());

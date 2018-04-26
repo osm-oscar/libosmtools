@@ -902,6 +902,13 @@ void OsmTriangulationRegionStore::refineTriangulation(TriangulationRefinementAlg
 	}
 }
 
+void OsmTriangulationRegionStore::simplify() {
+	#if defined(LIBOSMTOOLS_OSMTRS_USE_CONSTRAINED_TRIANGULATION_PLUS)
+	throw sserialize::UnimplementedFunctionException("OsmTriangulationRegionStore::simplify() is not implemented yet.");
+	#else
+	throw sserialize::UnsupportedFeatureException("OsmTriangulationRegionStore::simplify() needs constrained triangulation plus.");
+	#endif
+}
 
 void OsmTriangulationRegionStore::refineTriangulationFinalize() {
 	if (m_cs & CS_HAVE_SNAPPED_TRIANGULATION) {
