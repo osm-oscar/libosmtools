@@ -114,6 +114,10 @@ std::size_t OsmGridRegionTreeBase::size() const {
 	return regions().size();
 }
 
+const OsmGridRegionTreeBase::PointDataContainer & OsmGridRegionTreeBase::points() const {
+	return m_polygonPoints;
+}
+
 const OsmGridRegionTreeBase::RegionsContainer &
 OsmGridRegionTreeBase::regions() const {
 	return m_regions;

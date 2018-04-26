@@ -99,6 +99,7 @@ public:
 	void snapPoints();
 	void printStats(std::ostream & out);
 	std::size_t size() const;
+	const PointDataContainer & points() const;
 	const RegionsContainer & regions() const;
 	void setRefinerOptions(uint32_t latRefineCount, uint32_t lonRefineCount, double minDiag);
 	///you can still add more regions after calling this but they will not be part of the tree
