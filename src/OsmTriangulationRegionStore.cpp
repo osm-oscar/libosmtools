@@ -819,8 +819,8 @@ OsmTriangulationRegionStore::init(std::shared_ptr<OsmGridRegionTreeBase> grt, ui
 			for(++it; it != end; ++it, ++prev) {
 				RawGeoPoint itGp = *it;
 				RawGeoPoint prevGp = *prev;
-				if ((itGp.first < -170.0 && prevGp.first > 170.0) || (itGp.first > 170.0 && prevGp.first < -170)) {
-					std::cout << "Skipped edge crossing latitude boundary(-180->180)\n";
+				if ((itGp.second < -179.0 && prevGp.second > 179.0) || (itGp.second > 179.0 && prevGp.second < -179)) {
+					std::cout << "Skipped edge crossing longitude boundary(-180->180)\n";
 					continue;
 				}
 				segments.insert( std::pair<uint32_t, uint32_t>(gpToId.at(itGp), gpToId.at(prevGp)) );
