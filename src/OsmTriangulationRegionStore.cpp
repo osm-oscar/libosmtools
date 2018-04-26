@@ -776,14 +776,14 @@ OsmTriangulationRegionStore::init(std::shared_ptr<OsmGridRegionTreeBase> grt, ui
 	this->clear();
 	m_grt = grt;
 	{
-		//we first need to find all relevant regions and extract their segments. This sould be possible by just using the extracted regions since
+		//we first need to find all relevant regions and extract their segments. This should be possible by just using the extracted regions since
 		//we don't do any calculations with our points so segments with the same endpoints should stay the same in different regions
 		typedef std::pair<double, double> RawGeoPoint;
 		typedef typename OsmGridRegionTreeBase::GeoPolygon GeoPolygon;
 		typedef typename OsmGridRegionTreeBase::GeoMultiPolygon GeoMultiPolygon;
 		std::unordered_map<RawGeoPoint, uint32_t> gpToId;
 		std::vector<Point> pts;
-		std::unordered_set< std::pair<uint32_t, uint32_t> > segments;
+		std::vector< std::pair<uint32_t, uint32_t> > segments;
 		
 		auto handlePolygonPoints = [&gpToId](const GeoPolygon * gp) {
 			typename GeoPolygon::const_iterator it(gp->cbegin()), end(gp->cend());
@@ -823,7 +823,7 @@ OsmTriangulationRegionStore::init(std::shared_ptr<OsmGridRegionTreeBase> grt, ui
 					std::cout << "Skipped edge crossing longitude boundary(-180->180)\n";
 					continue;
 				}
-				segments.insert( std::pair<uint32_t, uint32_t>(gpToId.at(itGp), gpToId.at(prevGp)) );
+				segments.emplace_back(gpToId.at(itGp), gpToId.at(prevGp));
 			}
 		};
 		std::cout << "OsmTriangulationRegionStore: extracting segments..." << std::flush;
@@ -843,6 +843,8 @@ OsmTriangulationRegionStore::init(std::shared_ptr<OsmGridRegionTreeBase> grt, ui
 			}
 		}
 		std::cout << "done" << std::endl;
+		std::sort(segments.begin(), segments.end());
+		segments.resize(std::unique(segments.begin(), segments.end()) - segments.begin());
 		
 		std::cout << "Found " << gpToId.size() << " different points creating " << segments.size() << " different segments" << std::endl;
 		
