@@ -281,7 +281,6 @@ OsmTriangulationRegionStore::Point OsmTriangulationRegionStore::centroid(const O
 }
 
 void OsmTriangulationRegionStore::cellInfo(std::vector<Face_handle> & cellRep, std::vector<uint32_t> & cellSizes) {
-	SSERIALIZE_EXPENSIVE_ASSERT(OsmTriangulationRegionStore::selfTest());
 	cellRep.clear();
 	cellSizes.clear();
 	cellSizes.resize(m_refinedCellIdToUnrefined.size(), 0);
@@ -1207,40 +1206,40 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 }
 
 bool OsmTriangulationRegionStore::selfTest() {
-	std::unordered_set<uint32_t> cellIds;
-
-	for(All_faces_iterator it(m_grid.tds().all_faces_begin()), end(m_grid.tds().all_faces_end()); it != end; ++it) {
-		if (!it->info().hasCellId()) {
-			return false;
-		}
-		else if (!m_grid.tds().is_infinite(it)) {
-			uint32_t cellId = it->info().cellId();
-			cellIds.insert(cellId);
-		}
-		else {
-			if (it->info().cellId() != InfiniteFacesCellId) {
+	if (m_cs & CS_HAVE_CELLS) {
+		std::unordered_set<uint32_t> cellIds;
+		for(All_faces_iterator it(m_grid.tds().all_faces_begin()), end(m_grid.tds().all_faces_end()); it != end; ++it) {
+			if (!it->info().hasCellId()) {
 				return false;
 			}
+			else if (!m_grid.tds().is_infinite(it)) {
+				uint32_t cellId = it->info().cellId();
+				cellIds.insert(cellId);
+			}
+			else {
+				if (it->info().cellId() != InfiniteFacesCellId) {
+					return false;
+				}
+			}
 		}
-	}
-	
-	//now check for missing cellIds, skip cellId=0 since there are not neccessarily faces that are not in any region
-	bool allOk = true;
-	for(uint32_t i(1), s((uint32_t) cellIds.size()); i < s; ++i) {
-		if (!cellIds.count(i)) {
-			std::cout << "OsmTriangulationRegionStore::selfTest: missing cellId=" << i << " out of " << cellIds.size() <<'\n';
-			allOk = false;
+		
+		//now check for missing cellIds, skip cellId=0 since there are not neccessarily faces that are not in any region
+		bool allOk = true;
+		for(uint32_t i(1), s((uint32_t) cellIds.size()); i < s; ++i) {
+			if (!cellIds.count(i)) {
+				std::cout << "OsmTriangulationRegionStore::selfTest: missing cellId=" << i << " out of " << cellIds.size() <<'\n';
+				allOk = false;
+			}
 		}
-	}
-	std::cout << std::flush;
-	
-	if (!allOk) {
-		return false;
-	}
-	
-	for(const Face_handle & fh : m_grid.grid().storage()) {
-		if (!fh->info().hasCellId()) {
+		std::cout << std::flush;
+		if (!allOk) {
 			return false;
+		}
+		
+		for(const Face_handle & fh : m_grid.grid().storage()) {
+			if (!fh->info().hasCellId()) {
+				return false;
+			}
 		}
 	}
 	
