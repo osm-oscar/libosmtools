@@ -1,45 +1,17 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.9)
 project(libosmtools)
 find_package(CGAL REQUIRED)
 
-set(LIBOSMTOOLS_INCLUDE_DIR
+set(MY_INCLUDE_DIRS
 	"${CMAKE_CURRENT_SOURCE_DIR}/include"
-	${SSERIALIZE_INCLUDE_DIR}
-	${OSMPBF_INCLUDE_DIRS}
-	CACHE STRING "libosmtools include directories"
-	FORCE
 )
 
-set(LIBOSMTOOLS_LIBRARIES
-	${PROJECT_NAME}
-	CACHE STRING "libosmtools libraries"
-	FORCE
+set(MY_LINK_LIBRARIES
+	sserialize
+	osmpbf
 )
 
-set(LIBOSMTOOLS_LINK_LIBRARIES
-	${PROJECT_NAME}
-	${SSERIALIZE_LINK_LIBRARIES}
-	${OSMPBF_LINK_LIBRARIES}
-	"CGAL"
-	"CGAL_Core"
-	"boost_thread"
-	"boost_system"
-	CACHE STRING "libosmtools link libraries"
-	FORCE
-)
-
-mark_as_advanced(
-	LIBOSMTOOLS_INCLUDE_DIR
-	LIBOSMTOOLS_LIBRARIES
-	LIBOSMTOOLS_LINK_LIBRARIES
-)
-
-include_directories(
-	${LIBOSMTOOLS_INCLUDE_DIR}
-)
-
-
-file(GLOB_RECURSE INCLUDE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
+file(GLOB_RECURSE LIB_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
 
 set(LIB_SOURCES_CPP
 	src/AreaExtractor.cpp
@@ -52,7 +24,7 @@ set(LIB_SOURCES_CPP
 
 add_library(${PROJECT_NAME} STATIC
 	${LIB_SOURCES_CPP}
-	${INCLUDE_HEADERS}
+	${LIB_HEADERS}
 )
-target_include_directories(${PROJECT_NAME} PUBLIC ${LIBOSMTOOLS_INCLUDE_DIR})
-target_compile_definitions(${PROJECT_NAME} PUBLIC ${SSERIALIZE_COMPILE_DEFINITIONS})
+target_include_directories(${PROJECT_NAME} PUBLIC ${MY_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} PUBLIC ${MY_LINK_LIBRARIES})
