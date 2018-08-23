@@ -245,6 +245,67 @@ sserialize::UByteArrayAdapter& CellGraph::append(sserialize::UByteArrayAdapter& 
 
 }}//end namespace detail::OsmTriangulationRegionStore
 
+//BEGIN:TriangleGraph
+
+TriangleGraph::TriangleGraph(const TDS & tds) {
+	m_faces.reserve(tds.number_of_faces());
+	for(auto fit(tds.faces_begin()), fend(tds.faces_end()); fit != fend; ++fit) {
+		uint32_t faceId = m_faces.size();
+		m_faces.push_back( Face_handle(fit) );
+	}
+	for(auto fit(tds.faces_begin()), fend(tds.faces_end()); fit != fend; ++fit) {
+		
+	}
+}
+
+TriangleGraph::~TriangleGraph()
+{}
+
+const TriangleGraph::FaceNode &
+TriangleGraph::face(const Face_handle & fh) const {
+	return face( faceId(fh) );
+}
+
+TriangleGraph::FaceNode &
+TriangleGraph::face(const Face_handle & fh) {
+	return face( faceId(fh) );
+}
+
+const TriangleGraph::FaceNode &
+TriangleGraph::face(uint32_t faceId) const {
+	return m_faces.at(faceId);
+}
+
+TriangleGraph::FaceNode &
+TriangleGraph::face(uint32_t faceId) {
+	return m_faces.at(faceId);
+}
+
+uint32_t
+TriangleGraph::faceId(const Face_handle & fh) const {
+	if (!m_fh2f.is_defined(fh)) {
+		throw std::out_of_range();
+	}
+	return m_fh2f[fh];
+}
+
+uint32_t
+TriangleGraph::faceId(const FaceNode & f) const {
+	return faceId(f.fh);
+}
+
+CTGraph<TDS>
+TriangleGraph::ctGraph(const FaceNode & f) const {
+	
+}
+
+CTGraphBase
+TriangleGraph::ctGraph(const FaceNode & f) const {
+	
+}
+
+//END:TriangleGraph
+
 
 bool OsmTriangulationRegionStore::CellCriteriaInterface::refine(const State & state) {
 	for(uint32_t x : state.currentCells) {

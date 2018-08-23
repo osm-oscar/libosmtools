@@ -98,6 +98,7 @@ public:
 	using CTGraphBase::node;
 };
 
+
 //Graph of the cells of the OsmTriangulationRegionStore
 
 class CellGraph {
@@ -393,6 +394,37 @@ public:
 											sserialize::Static::spatial::Triangulation::GeometryCleanType gct);
 	
 	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
+};
+
+class TriangleGraph {
+public:
+	typedef OsmTriangulationRegionStore::Triangulation TDS;
+	typedef typename TDS::Face_handle Face_handle;
+private:
+	friend class osmtools::OsmTriangulationRegionStore;
+public:
+	struct FaceNode: detail::OsmTriangulationRegionStore::CTGraphBase::FaceNode {
+		FaceNode(Face_handle fh) : fh(fh), cellId(fh->info()) {}
+		Face_handle fh;
+		
+	};
+public:
+	TriangleGraph(const TriangleGraph &) = delete;
+	TriangleGraph(TriangleGraph &&) = delete;
+public:
+	TriangleGraph(const TDS & tds);
+	~TriangleGraph();
+	const FaceNode & face(const Face_handle & fh) const;
+	FaceNode & face(const Face_handle & fh);
+	const FaceNode & face(uint32_t faceId) const;
+	FaceNode & face(uint32_t faceId);
+	uint32_t faceId(const Face_handle & fh) const;
+	uint32_t faceId(const FaceNode & f) const;
+	CTGraph<TDS> ctGraph(const FaceNode & f) const;
+	CTGraphBase ctGraph(const FaceNode & f) const;
+public:
+	CGAL::Unique_hash_map<Face_handle, uint32_t> m_fh2f;
+	std::vector<FaceNode> m_faces;
 };
 
 template<typename T_TRIANG_REFINER>
