@@ -137,6 +137,10 @@ void AreaExtractor::NodeGatherer::operator()(osmpbf::PrimitiveBlockInputAdaptor&
 			Point & gp = ctx->nodes.at(nid);
 			gp.first = node.latd();
 			gp.second = node.lond();
+			if (ctx->snapGeometry) {
+				gp.first = sserialize::spatial::GeoPoint::snapLat(gp.first);
+				gp.second = sserialize::spatial::GeoPoint::snapLon(gp.second);
+			}
 		}
 	}
 }

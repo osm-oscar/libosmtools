@@ -84,8 +84,9 @@ private:
 		
 		osmpbf::PbiStream & inFile;
 		ExtractionTypes extractionTypes;
-		bool needsName;
-		bool verbose;
+		bool needsName{false};
+		bool verbose{false};
+		bool snapGeometry{false};
 		generics::RCPtr<osmpbf::AbstractTagFilter> externalFilter;
 		sserialize::ProgressInfo pinfo;
 		
@@ -153,7 +154,7 @@ private:
 		void operator()(osmpbf::PrimitiveBlockInputAdaptor & pbi);
 	};
 public:
-	AreaExtractor(bool verbose = false) : m_verbose(verbose) {}
+	AreaExtractor(bool verbose = false, bool snapGeometry = false) : m_verbose(verbose), m_snapGeometry(snapGeometry) {}
 	virtual ~AreaExtractor() {}
 	///@param processor (const std::shared_ptr<sserialize::spatial::GeoRegion> & region, osmpbf::IPrimitive & primitive), MUST be thread-safe
 	///@param filter additional AND-filter 
@@ -165,6 +166,7 @@ public:
 	bool extract(osmpbf::PbiStream & inData, TProcessor processor, ExtractionTypes extractionTypes = ET_ALL_SPECIAL_BUT_BUILDINGS, const generics::RCPtr<osmpbf::AbstractTagFilter> & filter = generics::RCPtr<osmpbf::AbstractTagFilter>(), uint32_t numThreads = 0, const std::string & msg = std::string("AreaExtractor"));
 private:
 	bool m_verbose;
+	bool m_snapGeometry;
 };
 
 template<typename TProcessor>
@@ -196,6 +198,7 @@ bool AreaExtractor::extract(osmpbf::PbiStream & inData, TProcessor processor, Ex
 	ctx.extractionTypes = extractionTypes;
 	ctx.externalFilter = filter;
 	ctx.verbose = m_verbose;
+	ctx.snapGeometry = m_snapGeometry;
 	
 	struct MyCB: ExtractorCallBack {
 		TProcessor * processor;
