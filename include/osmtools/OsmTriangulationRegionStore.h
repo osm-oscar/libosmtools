@@ -421,6 +421,7 @@ void OsmTriangulationRegionStore::refineTriangulation(TriangulationRefinementAlg
 		m_cs |= CS_HAVE_REFINED_TRIANGULATION;
 		refineTriangulationFinalize();
 		#endif
+		break;
 	}
 	case TRAS_ConformingTriangulation:
 	case TRAS_GabrielTriangulation:
