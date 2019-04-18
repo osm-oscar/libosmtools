@@ -187,7 +187,7 @@ public:
 // 	typedef CGAL::Filtered_simple_cartesian_extended_integer_kernel K;
 // 	typedef CGAL::Simple_cartesian_extended_integer_kernel K;
 	#else
-// 	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 	#endif
 	static constexpr bool KernelHasThreadSafeNumberType = std::is_same<K, CGAL::Filtered_simple_cartesian_extended_integer_kernel>::value;
 	typedef CGAL::Exact_intersections_tag Itag;
