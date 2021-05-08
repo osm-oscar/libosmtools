@@ -52,15 +52,19 @@ class CTGraphBase {
 private:
 	friend class osmtools::OsmTriangulationRegionStore;
 public:
-	static constexpr uint32_t NullFace = 0xFFFFFFFF;
+	using StaticTriangulation = sserialize::Static::spatial::Triangulation;
+	using FaceId = StaticTriangulation::FaceId;
+	using cellid_type = uint32_t;
+	using cellsize_type = uint32_t;
+public:
+	static constexpr FaceId NullFace = StaticTriangulation::NullFace;
 	struct FaceNode {
-		static constexpr uint32_t NullNeighbor = CTGraphBase::NullFace;
-		///by definition: if neighbours[i] == 0xFFFFFFFF => no neighbor
-		uint32_t neighbours[3];
+		static constexpr FaceId NullNeighbor = CTGraphBase::NullFace;
+		FaceId neighbours[3];
 	};
 	typedef std::vector<FaceNode> NodesContainer;
 private:
-	uint32_t m_cellId;
+	cellid_type m_cellId;
 	NodesContainer m_nodes;
 protected:
 	NodesContainer & nodes() { return m_nodes; }
@@ -68,15 +72,15 @@ protected:
 public:
 	CTGraphBase() {}
 	virtual ~CTGraphBase() {}
-	inline uint32_t size() const { return (uint32_t) m_nodes.size(); }
-	inline uint32_t cellId() const { return m_cellId; }
+	inline std::size_t size() const { return m_nodes.size(); }
+	inline cellid_type cellId() const { return m_cellId; }
 	///@param maxHopDistRoot to the root node from where the bfs-tree is deepest.
 	///       This is only true if calcMaxHopDistance returned true,
 	///       otherwise it is an approximation
-	bool calcMaxHopDistance(uint32_t& maxHopDistRoot);
-	uint32_t calcDiameter(uint32_t * startNode, uint32_t * endNode);
-	const FaceNode & node(uint32_t pos) const { return m_nodes.at(pos); }
-	FaceNode & node(uint32_t pos) { return m_nodes.at(pos); }
+	bool calcMaxHopDistance(FaceId & maxHopDistRoot);
+	std::size_t calcDiameter(std::size_t * startNode, std::size_t * endNode);
+	const FaceNode & node(std::size_t pos) const { return m_nodes.at(pos); }
+	FaceNode & node(std::size_t pos) { return m_nodes.at(pos); }
 };
 
 template<typename TDS>
@@ -87,12 +91,12 @@ private:
 	friend class osmtools::OsmTriangulationRegionStore;
 private:
 	std::vector<Face_handle> m_faces;
-	CGAL::Unique_hash_map<Face_handle, uint32_t> m_faceToNodeId;
+	CGAL::Unique_hash_map<Face_handle, FaceId> m_faceToNodeId;
 public:
 	CTGraph() {}
 	virtual ~CTGraph() {}
-	Face_handle face(uint32_t faceNodeId) const { return m_faces.at(faceNodeId); }
-	uint32_t node(const Face_handle & fh) {
+	Face_handle face(FaceId faceNodeId) const { return m_faces.at(faceNodeId.ut()); }
+	FaceId node(const Face_handle & fh) {
 		if (m_faceToNodeId.is_defined(fh)) {
 			return m_faceToNodeId[fh];
 		}
@@ -105,10 +109,13 @@ public:
 //Graph of the cells of the OsmTriangulationRegionStore
 
 class CellGraph {
+public:
+	using cellid_type = CTGraphBase::cellid_type;
+	using cellsize_type = CTGraphBase::cellsize_type;
 private:
 	friend class osmtools::OsmTriangulationRegionStore;
 public:
-	typedef sserialize::MMVector<uint32_t> NodePointersContainer;
+	typedef sserialize::MMVector<cellid_type> NodePointersContainer;
 	
 	class CellNode final {
 	private:
@@ -128,7 +135,7 @@ public:
 		m_d(d, offset, size) {}
 		CellNode() {}
 		~CellNode() {}
-		inline uint32_t size() const { return m_d.size(); }
+		inline NodePointersContainer::size_type size() const { return m_d.size(); }
 		inline iterator begin() { return m_d.begin(); }
 		inline const_iterator begin() const { return m_d.begin(); }
 		inline const_iterator cbegin() const { return m_d.cbegin(); }
@@ -153,11 +160,11 @@ public:
 	CellGraph & operator=(const CellGraph & other);
 	CellGraph & operator=(CellGraph && other);
 
-	inline uint32_t size() const { return (uint32_t) m_nodes.size(); }
-	inline const CellNode & node(uint32_t pos) const { return m_nodes.at(pos); }
-	inline CellNode & node(uint32_t pos) { return m_nodes.at(pos); }
+	inline std::size_t size() const { return m_nodes.size(); }
+	inline const CellNode & node(std::size_t pos) const { return m_nodes.at(pos); }
+	inline CellNode & node(std::size_t pos) { return m_nodes.at(pos); }
 	
-	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds) const;
+	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter & dest, const std::unordered_map<cellid_type, cellid_type> & myIdsToGhCellIds) const;
 };
 
 }}//end namespace detail::OsmTriangulationRegionStore
@@ -170,16 +177,20 @@ public:
   */
 class OsmTriangulationRegionStore {
 public:
+	
+	using cellid_type = detail::OsmTriangulationRegionStore::CTGraphBase::cellid_type;
+	using cellsize_type = detail::OsmTriangulationRegionStore::CTGraphBase::cellsize_type;
+	using regionid_type = uint32_t;
 
 	class FaceInfo {
 	private:
 		//default initialized to UnsetFacesCellId
-		uint32_t m_cellId;
+		cellid_type m_cellId;
 	public:
 		FaceInfo();
 		void clear();
-		void setCellId(uint32_t cellId);
-		uint32_t cellId() const;
+		void setCellId(cellid_type cellId);
+		cellid_type cellId() const;
 		bool hasCellId() const;
 	};
 
@@ -214,7 +225,7 @@ public:
 	typedef osmtools::GridLocator<Triangulation, KernelHasThreadSafeNumberType> GridLocator;
 	typedef GridLocator::Vertex_handle Vertex_handle;
 	typedef GridLocator::Face_handle Face_handle;
-	typedef sserialize::MMVector<uint32_t> RegionListContainer;
+	typedef sserialize::MMVector<regionid_type> RegionListContainer;
 	typedef sserialize::CFLArray<RegionListContainer> RegionList;
 	typedef GridLocator::TriangulationDataStructure::Finite_faces_iterator Finite_faces_iterator;
 	typedef GridLocator::TriangulationDataStructure::All_faces_iterator All_faces_iterator;
@@ -222,6 +233,7 @@ public:
 public:
 	typedef detail::OsmTriangulationRegionStore::CTGraph<Tds> CTGraph;
 	typedef detail::OsmTriangulationRegionStore::CellGraph CellGraph;
+	using FaceId = CTGraph::FaceId;
 
 	typedef enum {
 		TRAS_NoRefinement=0x0,
@@ -233,19 +245,23 @@ public:
 	
 	class CellCriteriaInterface {
 	public:
+		using cellid_type = detail::OsmTriangulationRegionStore::CTGraphBase::cellid_type;
+		using cellsize_type = detail::OsmTriangulationRegionStore::CTGraphBase::cellsize_type;
+		using FaceId = CTGraph::FaceId;
+	public:
 		struct State {
 			///Triangle count of all cells (includes new cells)
-			std::vector<uint32_t> cellSizes;
+			std::vector<cellsize_type> cellSizes;
 			///Face representatives for all cells (includes new cells)
 			std::vector<Face_handle> cellRep;
 			///the cell triangle graph of the current source cell that is about to be split
 			CTGraph cg;
 			///the list of new cell Ids, maps from CTGraph::NodeId to CellId
-			std::vector<uint32_t> newFaceCellIds;
+			std::vector<cellid_type> newFaceCellIds;
 			//the list of new cell representatives, maps to CTGraph::NodeId
-			std::vector<uint32_t> newCellReps;
+			std::vector<FaceId> newCellReps;
 			///the set of new cell ids
-			std::unordered_set<uint32_t> currentCells;
+			std::unordered_set<cellid_type> currentCells;
 		};
 		typedef enum {
 			DD_NONE=0x0,
@@ -268,13 +284,13 @@ public:
 		///@return true if source cell needs further refinement
 		virtual bool refine(const State &);
 		///@return true if cell needs further refinement
-		virtual bool refine(uint32_t /*cellId*/, const State &) { return false; }
+		virtual bool refine(cellid_type /*cellId*/, const State &) { return false; }
 		virtual CellCriteriaInterface * copy() = 0;
 	};
 	
 public:
-	static uint32_t InfiniteFacesCellId;
-	static uint32_t UnsetFacesCellId;
+	static cellid_type InfiniteFacesCellId;
+	static cellid_type UnsetFacesCellId;
 private:
 	struct FaceHandleHash {
 		std::hash<double> m_hasher;
@@ -288,8 +304,8 @@ private:
 			return seed;
 		}
 	};
-// 	typedef std::unordered_map<Face_handle, uint32_t, FaceHandleHash> FaceCellIdMap;
-	typedef CGAL::Unique_hash_map<Face_handle, uint32_t> FaceCellIdMap;
+// 	typedef std::unordered_map<Face_handle, cellid_type, FaceHandleHash> FaceCellIdMap;
+	typedef CGAL::Unique_hash_map<Face_handle, cellid_type> FaceCellIdMap;
 	
 	typedef enum {
 		CS_EMPTY=0x0,
@@ -304,7 +320,7 @@ private:
 private:
 	static Point centroid(const Face_handle & fh);
 	//calculate hop-distances from rfh to all other faces of the cell of rfh and store their hop-distance in cellTriangMap and the cells triangs in cellTriangs
-	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, uint32_t> & cellTriangMap, uint32_t & maxHopDist);
+	void hopDistances(const Face_handle & rfh, std::vector<Face_handle> & cellTriangs, CGAL::Unique_hash_map<Face_handle, cellsize_type> & cellTriangMap, cellsize_type & maxHopDist);
 
 	template<typename T_REFINER>
 	void myRefineMesh(T_REFINER refiner);
@@ -319,7 +335,7 @@ private:
 	GridLocator m_grid;
 	RegionListContainer m_cellLists;
 	std::vector<RegionList> m_cellIdToCellList;
-	std::vector<uint32_t> m_refinedCellIdToUnrefined;
+	std::vector<cellid_type> m_refinedCellIdToUnrefined;
 	bool m_isConnected;
 	std::mutex m_lock;
 	int m_cs; //construction state
@@ -334,10 +350,10 @@ public:
 	const GridLocator & grid() const { return m_grid; }
 	const Triangulation & tds() const { return m_grid.tds(); }
 	Triangulation & tds() { return m_grid.tds(); }
-	inline uint32_t cellCount() const { return (uint32_t) m_refinedCellIdToUnrefined.size(); }
-	inline uint32_t unrefinedCellCount() const { return (uint32_t) m_cellIdToCellList.size(); }
+	inline std::size_t cellCount() const { return m_refinedCellIdToUnrefined.size(); }
+	inline std::size_t unrefinedCellCount() const { return m_cellIdToCellList.size(); }
 	///@param threadCount pass 0 for automatic deduction (uses std::thread::hardware_concurrency())
-	void init(std::shared_ptr<OsmGridRegionTreeBase> grt, uint32_t threadCount);
+	void init(std::shared_ptr<OsmGridRegionTreeBase> grt, std::size_t threadCount);
 
 	///@param meshCriteria must be a modell of CGAL::MeshingCriteria_2 and provide function bool usesCellIds() if refineAlgo == MyRefineTag
 	///@param refineAlgo selects the refinement algo
@@ -352,9 +368,9 @@ public:
 	template<typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
 	void snapTriangulation(sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType, T_REMOVED_EDGES re = T_REMOVED_EDGES());
 	
-	void initGrid(uint32_t gridLatCount, uint32_t gridLonCount);
+	void initGrid(std::size_t gridLatCount, std::size_t gridLonCount);
 	
-	void assignCellIds(uint32_t threadCount);
+	void assignCellIds(std::size_t threadCount);
 	
 	///Splits cells into connected cells
 	void makeConnected();
@@ -362,26 +378,26 @@ public:
 	///This is done in multiple runs where each cell is split into up to numVoronoiSplitRuns smaller cells.
 	///Cells are not split into equally sized cells but rather by their voronoi diagram
 	///refine cells by connectedness so that all cells form a connected polygon (with holes)
-	void refineCells(std::shared_ptr<CellCriteriaInterface> refiner, uint32_t runs, uint32_t splitPerRun, uint32_t threadCount);
+	void refineCells(std::shared_ptr<CellCriteriaInterface> refiner, std::size_t runs, std::size_t splitPerRun, std::size_t threadCount);
 	
-	inline uint32_t unrefinedCellId(uint32_t cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
-	uint32_t cellId(double lat, double lon);
-	inline uint32_t cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
+	inline cellid_type unrefinedCellId(cellid_type cellId) { return m_refinedCellIdToUnrefined.at(cellId); }
+	cellid_type cellId(double lat, double lon);
+	inline cellid_type cellId(const sserialize::spatial::GeoPoint & gp) { return cellId(gp.lat(), gp.lon()); }
 	///@thread-safety no
-	uint32_t cellId(const Face_handle & fh);
+	cellid_type cellId(const Face_handle & fh);
 	inline const RegionListContainer & regionLists() const { return m_cellLists; }
 	inline RegionListContainer & regionLists() { return m_cellLists; }
-	const RegionList & regions(uint32_t cellId);
+	const RegionList & regions(cellid_type cellId);
 	Finite_faces_iterator finite_faces_begin() { return m_grid.tds().finite_faces_begin(); }
 	Finite_faces_iterator finite_faces_end() { return m_grid.tds().finite_faces_end(); }
 	
 	CellGraph cellGraph();
 	void ctGraph(const Face_handle& rfh, CTGraph& cg);
-	void cellInfo(std::vector<Face_handle> & cellRepresentatives, std::vector<uint32_t> & cellSizes);
-	std::vector<sserialize::spatial::GeoPoint> cellCenterOfMass(const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
+	void cellInfo(std::vector<Face_handle> & cellRepresentatives, std::vector<cellsize_type> & cellSizes);
+	std::vector<sserialize::spatial::GeoPoint> cellCenterOfMass(const std::unordered_map<cellid_type, cellid_type> & myIdsToGhCellIds);
 
 	template<typename T_OUTPUT_ITERATOR>
-	void regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out);
+	void regionCells(regionid_type regionId, T_OUTPUT_ITERATOR out);
 	
 	void printStats(std::ostream & out);
 	
@@ -393,10 +409,10 @@ public:
 	
 	///serializes to sserialize::Static::spatial::TriangulationGeoHierarchyArrangement
 	sserialize::UByteArrayAdapter & append(sserialize::UByteArrayAdapter& dest,
-											const std::unordered_map< uint32_t, uint32_t >& myIdsToGhCellIds,
+											const std::unordered_map< cellid_type, cellid_type >& myIdsToGhCellIds,
 											sserialize::Static::spatial::Triangulation::GeometryCleanType gct);
 	
-	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<uint32_t, uint32_t> & myIdsToGhCellIds);
+	bool equal(const sserialize::Static::spatial::TriangulationGeoHierarchyArrangement & ra, const std::unordered_map<cellid_type, cellid_type> & myIdsToGhCellIds);
 };
 
 template<typename T_TRIANG_REFINER>
@@ -474,7 +490,7 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner) {
 		throw sserialize::PreconditionViolationException("OsmTriangulationRegionStore::refineCells: mesh criteria needs cells");
 	}
 	
-	uint32_t refineCount = 0;
+	std::size_t refineCount = 0;
 	std::vector<RefinePoint> refinePoints;
 	sserialize::MinMax<typename T_REFINER::Quality> qs;
 	bool trWasRefined = true;
@@ -483,7 +499,7 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner) {
 	typename T_REFINER::Quality q = 0;
 	typename T_REFINER::Face_handle rfh;
 	MyBackInserter refinePointsInserter(&refinePoints);
-	for(uint32_t round(0); round < 10000 && trWasRefined; ++round) {
+	for(std::size_t round(0); round < 10000 && trWasRefined; ++round) {
 		std::cout << "Trianglerefinement round " << round << std::flush;
 		trWasRefined = false;
 		qs.reset();
@@ -509,15 +525,15 @@ void OsmTriangulationRegionStore::myRefineMesh(T_REFINER refiner) {
 }
 
 template<typename T_OUTPUT_ITERATOR>
-void OsmTriangulationRegionStore::regionCells(uint32_t regionId, T_OUTPUT_ITERATOR out) {
-	std::unordered_set<uint32_t> unrefinedMatching;
-	for(uint32_t uCellId(0), s((uint32_t) m_cellIdToCellList.size()); uCellId < s; ++uCellId) {
+void OsmTriangulationRegionStore::regionCells(regionid_type regionId, T_OUTPUT_ITERATOR out) {
+	std::unordered_set<cellid_type> unrefinedMatching;
+	for(cellid_type uCellId(0), s(sserialize::narrow_check<cellid_type>(m_cellIdToCellList.size())); uCellId < s; ++uCellId) {
 		const RegionList & rl = m_cellIdToCellList[uCellId];
 		if (std::find(rl.begin(), rl.end(), regionId) != rl.end()) {
 			unrefinedMatching.insert(uCellId);
 		}
 	}
-	for(uint32_t cellId(0), s((uint32_t) m_refinedCellIdToUnrefined.size()); cellId < s; ++cellId) {
+	for(cellid_type cellId(0), s(sserialize::narrow_check<cellid_type>(m_refinedCellIdToUnrefined.size())); cellId < s; ++cellId) {
 		if (unrefinedMatching.count(m_refinedCellIdToUnrefined[cellId])) {
 			*out = cellId;
 			++out;

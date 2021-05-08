@@ -16,6 +16,8 @@ public:
 	typedef typename TDs::Face_handle Face_handle;
 	typedef typename TDs::Vertex_handle Vertex_handle;
 	typedef sserialize::spatial::RWGeoGrid<Face_handle> Grid;
+	using VertexId = sserialize::Static::spatial::Triangulation::VertexId;
+	using FaceId = sserialize::Static::spatial::Triangulation::FaceId;
 public:
 	GridLocator() {}
 	GridLocator(GridLocator && other) :
@@ -38,7 +40,7 @@ public:
 	///serialize this to sserialize::Static::spatial::TriangulationGridLocator
 	///@thread-safety NO
 	sserialize::UByteArrayAdapter & append( sserialize::UByteArrayAdapter& dest,
-											CGAL::Unique_hash_map<Face_handle, uint32_t >& face2FaceId,
+											CGAL::Unique_hash_map<Face_handle, FaceId >& face2FaceId,
 											sserialize::Static::spatial::Triangulation::GeometryCleanType gct
 	);
 private:
@@ -139,22 +141,22 @@ GridLocator<TDs, TNumberTypeIsThreadSafe>::locate(double x, double y) const {
 }
 template<typename TDs, bool TNumberTypeIsThreadSafe>
 sserialize::UByteArrayAdapter&
-GridLocator<TDs, TNumberTypeIsThreadSafe>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map<Face_handle, uint32_t > & face2FaceId, sserialize::Static::spatial::Triangulation::GeometryCleanType gct) {
+GridLocator<TDs, TNumberTypeIsThreadSafe>::append(sserialize::UByteArrayAdapter& dest, CGAL::Unique_hash_map<Face_handle, FaceId> & face2FaceId, sserialize::Static::spatial::Triangulation::GeometryCleanType gct) {
 #ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	sserialize::UByteArrayAdapter::OffsetType initialPutPtr = dest.tellPutPtr();
 #endif
 	dest.putUint8(1);//version
 	{
-		CGAL::Unique_hash_map<Vertex_handle, uint32_t> vertex2VertexId;
+		CGAL::Unique_hash_map<Vertex_handle, VertexId> vertex2VertexId;
 		sserialize::Static::spatial::Triangulation::append(m_tds, face2FaceId, vertex2VertexId, dest, gct);
 	}
 	
 	dest << static_cast<const sserialize::spatial::GeoGrid&>(m_grid);
-	sserialize::Static::ArrayCreator<uint32_t> ac(dest);
+	sserialize::Static::ArrayCreator<FaceId> ac(dest);
 	for(uint32_t i(0), s(m_grid.tileCount()); i < s; ++i) {
 		const Face_handle & fh = m_grid.binAt(i);
 		SSERIALIZE_CHEAP_ASSERT(face2FaceId.is_defined(fh) || m_tds.is_infinite(fh));
-		uint32_t faceId = sserialize::Static::spatial::Triangulation::NullFace;
+		auto faceId = sserialize::Static::spatial::Triangulation::NullFace;
 		if (face2FaceId.is_defined(fh)) {
 			faceId = face2FaceId[fh];
 		}
@@ -169,9 +171,9 @@ GridLocator<TDs, TNumberTypeIsThreadSafe>::append(sserialize::UByteArrayAdapter&
 		tmp.shrinkToPutPtr();
 		sserialize::Static::spatial::TriangulationGridLocator str(tmp);
 		SSERIALIZE_EXPENSIVE_ASSERT_EQUAL(str.grid().tileCount(), m_grid.tileCount());
-		for(uint32_t i(0), s(m_grid.tileCount()); i < s; ++i) {
+		for(std::size_t i(0), s(m_grid.tileCount()); i < s; ++i) {
 			Face_handle fh = m_grid.at(i);
-			uint32_t myFaceId = sserialize::Static::spatial::Triangulation::NullFace;
+			auto myFaceId = sserialize::Static::spatial::Triangulation::NullFace;
 			if (face2FaceId.is_defined(fh)) {
 				myFaceId = face2FaceId[fh];
 			}
