@@ -35,7 +35,9 @@
 #include <CGAL/Delaunay_mesh_size_criteria_2.h>
 
 //for ExtenedInt64q kernel
-#include <libratss/CGAL/ExtendedInt64Cartesian.h>
+#ifdef SSERIALIZE_HAS_LIB_DTS2
+	#include <libratss/CGAL/ExtendedInt64Cartesian.h>
+#endif
 
 #include <assert.h>
 #include <thread>
@@ -201,7 +203,11 @@ public:
 	#else
 	typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 	#endif
+#ifdef SSERIALIZE_HAS_LIB_DTS2
 	static constexpr bool KernelHasThreadSafeNumberType = std::is_same<K, CGAL::Filtered_simple_cartesian_extended_integer_kernel>::value;
+#else
+	static constexpr bool KernelHasThreadSafeNumberType = false;
+#endif
 	typedef CGAL::Exact_intersections_tag Itag;
 	typedef CGAL::Triangulation_vertex_base_2<K> Vb;
 	typedef CGAL::Delaunay_mesh_vertex_base_2<K, Vb> MVb;

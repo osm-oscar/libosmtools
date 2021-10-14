@@ -1079,11 +1079,11 @@ void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 	
 	std::vector<uint32_t>::const_iterator maxElem = std::max_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
 	std::vector<uint32_t>::const_iterator minElem = std::min_element(triangCountOfCells.begin()+1, triangCountOfCells.end());
-	
+#ifdef SSERIALIZE_HAS_LIB_DTS2
 	out << "ExtendedInt64q allocation stats: " << std::endl;
 	out << "# extended allocations: " << CGAL::Epeceik_ft::number_of_extended_allocations << '\n';
 	out << "# allocations: " << CGAL::Epeceik_ft::number_of_allocations << '\n';
-	
+#endif
 	out << "Cell Triangle stats: \n";
 	out << "\tmin: " << *minElem << " at " << minElem - triangCountOfCells.begin() << "\n";
 	out << "\tmax: " << *maxElem << " at " << maxElem - triangCountOfCells.begin() << "\n";
