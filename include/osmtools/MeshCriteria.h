@@ -11,9 +11,6 @@
 #include <CGAL/Delaunay_mesher_2.h>
 #include <CGAL/Triangulation_conformer_2.h>
 #include <CGAL/Delaunay_mesh_size_criteria_2.h>
-//for ExtenedInt64q kernel
-#include <libratss/CGAL/ExtendedInt64Cartesian.h>
-
 #include <sserialize/spatial/DistanceCalculator.h>
 #include <sserialize/utility/exceptions.h>
 
