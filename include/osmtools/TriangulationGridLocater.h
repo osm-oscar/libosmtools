@@ -145,7 +145,7 @@ GridLocator<TDs, TNumberTypeIsThreadSafe>::append(sserialize::UByteArrayAdapter&
 #ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	sserialize::UByteArrayAdapter::OffsetType initialPutPtr = dest.tellPutPtr();
 #endif
-	dest.putUint8(1);//version
+	dest.putUint8(2);//version
 	{
 		CGAL::Unique_hash_map<Vertex_handle, VertexId> vertex2VertexId;
 		sserialize::Static::spatial::Triangulation::append(m_tds, face2FaceId, vertex2VertexId, dest, gct);
