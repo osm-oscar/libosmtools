@@ -1,6 +1,7 @@
 #include <osmtools/OsmTriangulationRegionStore.h>
 #include <sserialize/mt/ThreadPool.h>
 #include <sserialize/Static/TracGraph.h>
+#include <sserialize/utility/printers.h>
 #include <random>
 
 namespace osmtools {
@@ -264,7 +265,7 @@ void OsmTriangulationRegionStore::FaceInfo::setCellId(cellid_type cellId) {
 	m_cellId = cellId;
 }
 
-uint32_t OsmTriangulationRegionStore::FaceInfo::cellId() const {
+OsmTriangulationRegionStore::cellid_type OsmTriangulationRegionStore::FaceInfo::cellId() const {
 	return m_cellId;
 }
 
@@ -919,9 +920,25 @@ void OsmTriangulationRegionStore::refineTriangulationFinalize() {
 		clearRefinement();
 	}
 	
-	if (m_cs & CS_HAVE_CELLS) {
-		std::cerr << "WARNING: OsmTriangulationRegionStore::refineTriangulation: Removing cells" << std::endl;
+	if (m_cs & (CS_HAVE_CELLS|CS_HAVE_PARTIAL_CELLS)) {
+		handleCellChanges();
+	}
+}
+
+void OsmTriangulationRegionStore::handleCellChanges() {
+	std::unordered_set<cellid_type> cellIds;
+	for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
+		if (it->info().hasCellId()) {
+			cellIds.insert(it->info().cellId());
+		}
+		else {
+			m_cs &= ~CS_HAVE_CELLS;
+		}
+	}
+	if (cellIds.size() != m_cellIdToCellList.size()) {
+		clearCells();
 		m_cs &= ~CS_HAVE_CELLS;
+		m_cs &= ~CS_HAVE_PARTIAL_CELLS;
 	}
 }
 
@@ -953,11 +970,11 @@ void OsmTriangulationRegionStore::assignCellIds(std::size_t threadCount) {
 	};
 	
 	struct Context {
-		std::unordered_map<CellListKey, uint32_t, CellListKeyHasher> cellListToCellId;
+		std::unordered_map<CellListKey, cellid_type, CellListKeyHasher> cellListToCellId;
 		std::shared_ptr<OsmGridRegionTreeBase> grt;
 		RegionListContainer * p_cellLists;
 		sserialize::ProgressInfo pinfo;
-		uint32_t finishedFaces;
+		std::size_t finishedFaces;
 		Triangulation::Finite_faces_iterator facesIt;
 		Triangulation::Finite_faces_iterator facesEnd;
 		std::mutex iteratorLock;
@@ -977,7 +994,7 @@ void OsmTriangulationRegionStore::assignCellIds(std::size_t threadCount) {
 			RegionList tmp(ctx.p_cellLists, 0, 0);
 			ctx.cellListToCellId[CellListKey(hasher(tmp), tmp)] = 0;
 		}
-		for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
+		for(cellid_type i(0), s(sserialize::narrow_check<cellid_type>(m_cellIdToCellList.size())); i < s; ++i) {
 			const auto & tmp = m_cellIdToCellList.at(i);
 			ctx.cellListToCellId[CellListKey(hasher(tmp), tmp)] = i;
 		}
@@ -1013,7 +1030,7 @@ void OsmTriangulationRegionStore::assignCellIds(std::size_t threadCount) {
 					centroid = OsmTriangulationRegionStore::centroid(fh);
 				}
 				
-				uint32_t faceCellId = 0;
+				cellid_type faceCellId = 0;
 				{
 					double x = CGAL::to_double(centroid.x());
 					double y = CGAL::to_double(centroid.y());
@@ -1029,7 +1046,7 @@ void OsmTriangulationRegionStore::assignCellIds(std::size_t threadCount) {
 					std::lock_guard<std::mutex> lck(ctx->cellListLock);
 					auto cellListToCellIdIt = ctx->cellListToCellId.find(tmpCellListKey);
 					if (cellListToCellIdIt == ctx->cellListToCellId.end()) {
-						faceCellId = (uint32_t) ctx->cellListToCellId.size();
+						faceCellId = sserialize::narrow_check<cellid_type>(ctx->cellListToCellId.size());
 						auto off = ctx->p_cellLists->size();
 						ctx->p_cellLists->push_back(tmpCellListKey.list.begin(), tmpCellListKey.list.end());
 						ctx->cellListToCellId[CellListKey(tmpCellListKey.hash, ctx->p_cellLists, off, tmpCellListKey.list.size())] = faceCellId;
@@ -1057,11 +1074,12 @@ void OsmTriangulationRegionStore::assignCellIds(std::size_t threadCount) {
 	}
 	
 	m_refinedCellIdToUnrefined.clear();
-	for(uint32_t i(0), s((uint32_t) m_cellIdToCellList.size()); i < s; ++i) {
+	for(cellid_type i(0), s(m_cellIdToCellList.size()); i < s; ++i) {
 		m_refinedCellIdToUnrefined.push_back(i);
 	}
 	
 	m_cs &= ~CS_HAVE_REFINED_CELLS;
+	m_cs |= CS_HAVE_PARTIAL_CELLS;
 	m_cs |= CS_HAVE_CELLS;
 	
 	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
@@ -1072,7 +1090,7 @@ void OsmTriangulationRegionStore::printStats(std::ostream& out) {
 		return;
 	std::vector<uint32_t> triangCountOfCells(cellCount(), 0);
 	for(Finite_faces_iterator it(finite_faces_begin()), end(finite_faces_end()); it != end; ++it) {
-		uint32_t fid = cellId(it);
+		cellid_type fid = cellId(it);
 		triangCountOfCells.at(fid) += 1;
 	}
 	//skip cell 0 since that one is not created by any region and thus should not contain many or any items
@@ -1140,6 +1158,7 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 }
 
 sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::UByteArrayAdapter& dest, const std::unordered_map< cellid_type, cellid_type >& myIdsToGhCellIds, sserialize::Static::spatial::Triangulation::GeometryCleanType gct) {
+	SSERIALIZE_EXPENSIVE_ASSERT(selfTest());
 #ifdef SSERIALIZE_EXPENSIVE_ASSERT_ENABLED
 	sserialize::UByteArrayAdapter::OffsetType initialOffset = dest.tellPutPtr();
 #endif
@@ -1191,9 +1210,12 @@ sserialize::UByteArrayAdapter& OsmTriangulationRegionStore::append(sserialize::U
 			if (myIdsToGhCellIds.count(myCellId)) {
 				remappedCellId = myIdsToGhCellIds.at(myCellId);
 			}
-			SSERIALIZE_EXPENSIVE_ASSERT(remappedCellId == ra.cellIdFromFaceId(sfaceId));
+			SSERIALIZE_EXPENSIVE_ASSERT(
+					remappedCellId == ra.cellIdFromFaceId(sfaceId)
+				|| (ra.cellIdFromFaceId(sfaceId) == decltype(ra)::NullCellId && remappedCellId == myNullCellId)
+			);
 		}
-		SSERIALIZE_EXPENSIVE_ASSERT(cellId2FaceId.size() == ra.cellCount());
+		SSERIALIZE_EXPENSIVE_ASSERT_EQUAL(cellId2FaceId.size(), ra.cellCount());
 		for(cellid_type cellId(0), s(cellId2FaceId.size()); cellId != s; ++cellId) {
 			SSERIALIZE_EXPENSIVE_ASSERT(FaceId(cellId2FaceId.at(cellId)) == ra.faceIdFromCellId(cellId));
 		}
@@ -1224,7 +1246,9 @@ bool OsmTriangulationRegionStore::selfTest() {
 		bool allOk = true;
 		for(cellid_type i(1), s(sserialize::narrow_check<cellid_type>(cellIds.size())); i < s; ++i) {
 			if (!cellIds.count(i)) {
+				using namespace sserialize;
 				std::cout << "OsmTriangulationRegionStore::selfTest: missing cellId=" << i << " out of " << cellIds.size() <<'\n';
+				std::cout << "regionList= " << m_cellIdToCellList.at(i);
 				allOk = false;
 			}
 		}

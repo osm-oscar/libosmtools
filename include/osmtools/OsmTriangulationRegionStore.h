@@ -315,12 +315,13 @@ private:
 	
 	typedef enum {
 		CS_EMPTY=0x0,
-		CS_HAVE_TRIANGULATION=0x1, //triangulation is there, but no cells are assigned
-		CS_HAVE_CELLS=0x2, //faces have cell ids assigned
-		CS_HAVE_REFINED_TRIANGULATION=0x4,
-		CS_HAVE_SNAPPED_TRIANGULATION=0x8, //triangulation has snapped geometry
-		CS_HAVE_GRID=0x10, //grid for fast look-up is available
-		CS_HAVE_REFINED_CELLS=0x20 // cells are refined
+		CS_HAVE_TRIANGULATION=1 << 1, //triangulation is there, but no cells are assigned
+		CS_HAVE_PARTIAL_CELLS=1 << 2, // some faces have cell ids assigned
+		CS_HAVE_CELLS=1 << 3, //faces have cell ids assigned
+		CS_HAVE_REFINED_TRIANGULATION=1 << 4,
+		CS_HAVE_SNAPPED_TRIANGULATION=1 << 5, //triangulation has snapped geometry
+		CS_HAVE_GRID=1 << 6, //grid for fast look-up is available
+		CS_HAVE_REFINED_CELLS=1 << 7 // cells are refined
 	} ConstructionState;
 	
 private:
@@ -334,6 +335,11 @@ private:
 	void setInfinteFacesCellIds();
 	
 	void refineTriangulationFinalize();
+	
+	/// Take care of cell state changes
+	/// Removing a cell results in total removal of cells
+	/// Removing face cell assignments reduces the cell construction state to CS_HAVE_PARTIAL_CELLS
+	void handleCellChanges();
 	
 	std::shared_ptr<OsmGridRegionTreeBase> & grt() { return m_grt; }
 private:
@@ -371,6 +377,7 @@ public:
 	///simplify the triangulation
 	void simplify();
 	
+	/// Snap triangulation. This operation may remove cells and will likely generate new triangles without cell assignment
 	template<typename T_REMOVED_EDGES = sserialize::Static::spatial::detail::Triangulation::PrintRemovedEdges>
 	void snapTriangulation(sserialize::Static::spatial::Triangulation::GeometryCleanType geoCleanType, T_REMOVED_EDGES re = T_REMOVED_EDGES());
 	
@@ -461,12 +468,10 @@ OsmTriangulationRegionStore::snapTriangulation(sserialize::Static::spatial::Tria
 	if (geoCleanType != sserialize::Static::spatial::Triangulation::GCT_NONE) {
 		sserialize::Static::spatial::Triangulation::prepare(tds(), re,  geoCleanType, 0.01);
 		if (m_cs & CS_HAVE_REFINED_CELLS) {
-			std::cerr << "WARNING: OsmTriangulationRegionStore::snapTriangulation: removing cell refinement" << std::endl;
 			clearRefinement();
 		}
-		if (m_cs & CS_HAVE_CELLS) {
-			std::cerr << "WARNING: OsmTriangulationRegionStore::snapTriangulation: removing cells" << std::endl;
-			m_cs &= ~CS_HAVE_CELLS;
+		if (m_cs & (CS_HAVE_CELLS|CS_HAVE_PARTIAL_CELLS)) {
+			handleCellChanges();
 		}
 		m_cs |= CS_HAVE_SNAPPED_TRIANGULATION;
 	}
